@@ -421,9 +421,46 @@ tbody td{padding:9px 14px;vertical-align:middle}
 .nc-save{background:var(--gm);color:#fff;border:none;border-radius:var(--rs);padding:9px 22px;font-size:13px;font-weight:600;cursor:pointer}
 .nc-save:hover{background:var(--gd)}
 .nc-save:disabled{background:#a8d8b4;cursor:not-allowed}
+
+.login-overlay{position:fixed;inset:0;background:#f0f4f1;z-index:99999;display:flex;align-items:center;justify-content:center}
+.login-overlay.hide{display:none}
+.login-card{background:#fff;border-radius:16px;padding:40px;width:100%;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,0.12);text-align:center}
+.login-logo{background:#1a6b2f;border-radius:12px;padding:12px 24px;display:inline-block;margin-bottom:20px}
+.login-logo .par{color:#4caf6e;font-size:24px;font-weight:900}
+.login-logo .cred{color:#fff;font-size:24px;font-weight:900}
+.login-logo .sub{display:block;font-size:9px;color:#a8d8b4;letter-spacing:2px;text-transform:uppercase;margin-top:2px}
+.login-title{font-size:18px;font-weight:700;color:#1a1a1a;margin-bottom:4px}
+.login-sub{font-size:13px;color:#6b7280;margin-bottom:28px}
+.login-input-wrap{position:relative;margin-bottom:16px}
+.login-input{width:100%;padding:12px 44px 12px 14px;border:1.5px solid #d1e8d8;border-radius:8px;font-size:14px;color:#1a1a1a;outline:none;background:#f9fafb;font-family:inherit}
+.login-input:focus{border-color:#2d8a47;background:#fff}
+.login-eye{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#6b7280;font-size:16px}
+.login-btn{width:100%;padding:12px;background:#1a6b2f;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;transition:background .15s}
+.login-btn:hover{background:#145a27}
+.login-error{color:#991b1b;font-size:12px;margin-bottom:12px;display:none;background:#fee2e2;padding:8px 12px;border-radius:6px}
+.login-error.show{display:block}
 </style>
 </head>
 <body>
+
+
+<div class="login-overlay" id="login-overlay">
+  <div class="login-card">
+    <div class="login-logo">
+      <span class="par">PAR</span><span class="cred">CRED</span>
+      <span class="sub">Soluções Financeiras</span>
+    </div>
+    <div class="login-title">Dashboard Comercial</div>
+    <div class="login-sub">Acesso restrito — equipe Parcred</div>
+    <div class="login-error" id="login-error">Senha incorreta. Tente novamente.</div>
+    <div class="login-input-wrap">
+      <input type="password" id="login-senha" class="login-input" placeholder="Digite a senha de acesso"
+        onkeydown="if(event.key==='Enter')fazerLogin()">
+      <button class="login-eye" onclick="toggleSenha()" id="login-eye-btn">👁</button>
+    </div>
+    <button class="login-btn" onclick="fazerLogin()">Entrar</button>
+  </div>
+</div>
 
 <div class="loading-overlay" id="loading">
   <div class="spinner"></div>
@@ -1532,6 +1569,33 @@ document.getElementById('nc-modal-bg').addEventListener('click',function(e){
   if(e.target===this)fecharNovoConv();
 });
 // ── FIM NOVO CONVÊNIO ──────────────────────────────────────────────
+
+
+function fazerLogin(){
+  const senha = document.getElementById('login-senha').value;
+  const erro  = document.getElementById('login-error');
+  if(senha === 'Parcred@123'){
+    document.getElementById('login-overlay').classList.add('hide');
+    sessionStorage.setItem('parcred_auth','1');
+    erro.classList.remove('show');
+  } else {
+    erro.classList.add('show');
+    document.getElementById('login-senha').value='';
+    document.getElementById('login-senha').focus();
+  }
+}
+
+function toggleSenha(){
+  const inp = document.getElementById('login-senha');
+  const btn = document.getElementById('login-eye-btn');
+  if(inp.type==='password'){inp.type='text';btn.textContent='🙈';}
+  else{inp.type='password';btn.textContent='👁';}
+}
+
+// Verifica se já autenticou nessa sessão
+if(sessionStorage.getItem('parcred_auth')==='1'){
+  document.getElementById('login-overlay').classList.add('hide');
+}
 
 function loadData(){
   sl(true);hideErr();
