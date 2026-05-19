@@ -936,11 +936,48 @@ function destroyCharts(){Object.values(charts).forEach(c=>{try{c.destroy();}catc
 function mapColor(n){if(n>=5)return'#1a6b2f';if(n>=3)return'#4caf6e';if(n>=1)return'#a8d8b4';return'#e8f0ea';}
 
 function buildMap(){
+  // Mapa de nomes de estados para UF
+  const ESTADO_UF={
+    'ACRE':'AC','ALAGOAS':'AL','AMAPA':'AP','AMAPÁ':'AP','AMAZONAS':'AM',
+    'BAHIA':'BA','CEARA':'CE','CEARÁ':'CE','DISTRITO FEDERAL':'DF',
+    'ESPIRITO SANTO':'ES','ESPÍRITO SANTO':'ES','GOIAS':'GO','GOIÁS':'GO',
+    'MARANHAO':'MA','MARANHÃO':'MA','MATO GROSSO DO SUL':'MS','MATO GROSSO':'MT',
+    'MINAS GERAIS':'MG','PARA':'PA','PARÁ':'PA','PARAIBA':'PB','PARAÍBA':'PB',
+    'PARANA':'PR','PARANÁ':'PR','PERNAMBUCO':'PE','PIAUI':'PI','PIAUÍ':'PI',
+    'RIO DE JANEIRO':'RJ','RIO GRANDE DO NORTE':'RN','RIO GRANDE DO SUL':'RS',
+    'RONDONIA':'RO','RONDÔNIA':'RO','RORAIMA':'RR','SANTA CATARINA':'SC',
+    'SAO PAULO':'SP','SÃO PAULO':'SP','SERGIPE':'SE','TOCANTINS':'TO',
+  };
+
+  function extrairUF(nome){
+    // Tenta pelo padrão "- UF" no final
+    const m=nome.match(/[-–]\s*([A-Z]{2})\s*$/);
+    if(m)return m[1];
+    // Tenta por nome do estado por extenso
+    const upper=nome.toUpperCase()
+      .replace('GOVERNO DO ESTADO DO ','')
+      .replace('GOVERNO DO ESTADO DE ','')
+      .replace('GOVERNO DO ESTADO D'','')
+      .replace('GOVERNO ESTADUAL DE ','')
+      .replace('GOVERNO DE ','')
+      .replace('GOV. DO ','')
+      .replace('GOV. DE ','')
+      .replace('ASSEMBLEIA LEGISLATIVA DO ','')
+      .replace('ASSEMBLEIA LEGISLATIVA DE ','')
+      .trim();
+    // Check direct match
+    if(ESTADO_UF[upper])return ESTADO_UF[upper];
+    // Check if any state name is contained
+    for(const [estado,uf] of Object.entries(ESTADO_UF)){
+      if(upper.includes(estado))return uf;
+    }
+    return null;
+  }
+
   mapUfData={};
   allData.forEach(d=>{
-    const m=d.nome.match(/[-\u2013]\s*([A-Z]{2})\s*$/);
-    if(!m)return;
-    const uf=m[1];
+    const uf=extrairUF(d.nome);
+    if(!uf)return;
     if(!mapUfData[uf])mapUfData[uf]=[];
     mapUfData[uf].push(d);
   });
