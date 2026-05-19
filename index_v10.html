@@ -1267,8 +1267,11 @@ function processProducaoData(rows) {
   selFim.innerHTML  = semanas.map(s=>`<option value="${s.k}">${s.l}</option>`).join('');
   selFim.selectedIndex = semanas.length - 1;
 
-  document.getElementById('pf-corban').innerHTML  = '<option value="">Todos</option>' + corbans.map(c=>`<option>${c}</option>`).join('');
-  document.getElementById('pf-convenio').innerHTML= '<option value="">Todos</option>' + convenios.map(c=>`<option>${c}</option>`).join('');
+  // Populate checkbox dropdowns
+  prodDDOpts['pf-corban'] = corbans;
+  prodDDOpts['pf-convenio'] = convenios;
+  renderProdDDItems('pf-corban', corbans);
+  renderProdDDItems('pf-convenio', convenios);
 
   document.getElementById('prod-content').style.display = 'block';
   renderProducao();
