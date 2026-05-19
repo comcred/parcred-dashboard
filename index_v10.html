@@ -611,9 +611,43 @@ tbody td{padding:9px 14px;vertical-align:middle}
       <div class="prod-filters">
         <div class="prod-filter-group"><label>Semana inicial</label><select id="pf-sem-ini" onchange="renderProducao()"></select></div>
         <div class="prod-filter-group"><label>Semana final</label><select id="pf-sem-fim" onchange="renderProducao()"></select></div>
-        <div class="prod-filter-group"><label>Corban</label><select id="pf-corban" onchange="renderProducao()"><option value="">Todos</option></select></div>
-        <div class="prod-filter-group"><label>Convênio</label><select id="pf-convenio" onchange="renderProducao()"><option value="">Todos</option></select></div>
+        <div class="dd-wrap">
+          <div class="dd-btn" id="pf-corban-btn" onclick="toggleDD('pf-corban')">
+            <span id="pf-corban-label">Corban</span>
+            <div style="display:flex;align-items:center;gap:5px">
+              <span class="dd-badge" id="pf-corban-badge" style="display:none">0</span>
+              <span style="font-size:10px;color:var(--tm)">▾</span>
+            </div>
+          </div>
+          <div class="dd-menu" id="pf-corban-menu" style="display:none">
+            <input class="dd-search" placeholder="Buscar corban..." oninput="filterProdDD('pf-corban',this.value)">
+            <div id="pf-corban-items"></div>
+            <div class="dd-footer">
+              <button class="dd-clear" onclick="clearProdDD('pf-corban')">Limpar</button>
+              <button class="dd-apply" onclick="toggleDD('pf-corban')">Aplicar</button>
+            </div>
+          </div>
+        </div>
+        <div class="dd-wrap">
+          <div class="dd-btn" id="pf-convenio-btn" onclick="toggleDD('pf-convenio')">
+            <span id="pf-convenio-label">Convênio</span>
+            <div style="display:flex;align-items:center;gap:5px">
+              <span class="dd-badge" id="pf-convenio-badge" style="display:none">0</span>
+              <span style="font-size:10px;color:var(--tm)">▾</span>
+            </div>
+          </div>
+          <div class="dd-menu" id="pf-convenio-menu" style="display:none">
+            <input class="dd-search" placeholder="Buscar convênio..." oninput="filterProdDD('pf-convenio',this.value)">
+            <div id="pf-convenio-items"></div>
+            <div class="dd-footer">
+              <button class="dd-clear" onclick="clearProdDD('pf-convenio')">Limpar</button>
+              <button class="dd-apply" onclick="toggleDD('pf-convenio')">Aplicar</button>
+            </div>
+          </div>
+        </div>
+        <button class="btn-clear-all" onclick="clearAllProdFilters()">✕ Limpar</button>
       </div>
+      <div class="sel-tags" id="prod-sel-tags"></div>
       <div class="section-title">Visão Geral do Período</div>
       <div class="kpi-grid" id="prod-kpis"></div>
       <div class="section-title">Produção Semanal — Valor Líquido</div>
