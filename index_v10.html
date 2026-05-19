@@ -1196,79 +1196,74 @@ let prodCharts = {};
 const CORBAN_COLORS = ['#1a6b2f','#2d8a47','#4caf6e','#6abf85','#a8d8b4','#c8e6cf'];
 const CONV_COLORS   = ['#1e40af','#2563eb','#3b82f6','#60a5fa','#93c5fd','#1d4ed8'];
 
+// Checkbox dropdown state for production filters
+const prodDDState = {'pf-corban': new Set(), 'pf-convenio': new Set()};
+const prodDDOpts  = {'pf-corban': [], 'pf-convenio': []};
+const prodDDLabels = {'pf-corban': 'Corban', 'pf-convenio': 'Convênio'};
+
 function handleCSV(input) {
   const file = input.files[0];
   if (!file) return;
   document.getElementById('prod-file-name').textContent = file.name;
   document.getElementById('prod-upload-info').style.display = 'flex';
-
   Papa.parse(file, {
     header: true,
     skipEmptyLines: true,
     encoding: 'UTF-8',
     delimiter: ';',
-    complete: function(results) {
-      processProducaoData(results.data);
-    }
+    complete: function(results) { processProducaoData(results.data); }
   });
 }
 
 function processProducaoData(rows) {
-  const clean = (v) => parseFloat(String(v||'0').replace(/\./g,'').replace(',','.')) || 0;
+  const cl = v => parseFloat(String(v||'0').replace(/\./g,'').replace(',','.')) || 0;
 
   prodData = rows.map(r => {
-    const dateStr = r['Data Digitação'] || r['\uFEFFData Digitação'] || '';
-    const parts = dateStr.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    const ds = (r['Data Digitação'] || r['\uFEFFData Digitação'] || '').trim();
+    const pt = ds.match(/(\d{2})\/(\d{2})\/(\d{4})/);
     let date = null;
-    if (parts) date = new Date(`${parts[3]}-${parts[2]}-${parts[1]}`);
+    if (pt) date = new Date(`${pt[3]}-${pt[2]}-${pt[1]}`);
 
-    const getWeekStart = (d) => {
+    const gws = d => {
       if (!d) return null;
-      const day = new Date(d);
-      const diff = day.getDay() === 0 ? -6 : 1 - day.getDay();
-      day.setDate(day.getDate() + diff);
-      return day;
+      const x = new Date(d);
+      x.setDate(x.getDate() + (x.getDay() === 0 ? -6 : 1 - x.getDay()));
+      return x;
     };
+    const ws = gws(date);
+    const we = ws ? new Date(ws.getTime() + 6*864e5) : null;
+    const f  = d => d ? `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}` : '';
+    const fy = d => d ? `${f(d)}/${String(d.getFullYear()).slice(2)}` : '';
 
-    const ws = getWeekStart(date);
-    const we = ws ? new Date(ws.getTime() + 6*24*60*60*1000) : null;
-    const fmt = (d) => d ? `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}` : '';
-    const fmtY = (d) => d ? `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getFullYear()).slice(2)}` : '';
-
-    const semLabel = ws ? `${fmt(ws)} – ${fmtY(we)}` : 'Sem data';
-    const semKey   = ws ? ws.toISOString().slice(0,10) : '9999-99-99';
-
-    const corban = (r['Ponto de Venda']||'').trim();
-    const convenio = (r['Empregador']||'').trim()
+    const cb = (r['Ponto de Venda'] || '').trim();
+    const cv = (r['Empregador'] || '').trim()
       .replace('PREFEITURA MUNICIPAL DE ','Pref. ')
-      .replace('PREFEITURA DE ','Pref. ')
-      .replace('CAMARA MUNICIPAL DE ','Câm. ');
+      .replace('CÂMARA MUNICIPAL DE ','Câm. ')
+      .replace('CAMARA MUNICIPAL DE ','Câm. ')
+      .replace('PREFEITURA DE ','Pref. ');
 
     return {
-      corban,
-      convenio,
-      valorLiq: clean(r['Valor Líquido']),
-      parcela:  clean(r['Parcela']),
-      semKey,
-      semLabel,
-      date,
+      cb, cv,
+      vl: cl(r['Valor Líquido']),
+      pa: cl(r['Parcela']),
+      semKey:   ws ? ws.toISOString().slice(0,10) : '9999',
+      semLabel: ws ? `${f(ws)} – ${fy(we)}` : 'Sem data',
+      date
     };
-  }).filter(r => r.corban && r.valorLiq > 0 && r.date);
+  }).filter(r => r.cb && r.vl > 0 && r.date);
 
-  // Populate filters
-  const semanas = [...new Set(prodData.map(r => JSON.stringify({k:r.semKey,l:r.semLabel})))]
+  const sems = [...new Set(prodData.map(r => JSON.stringify({k:r.semKey,l:r.semLabel})))]
     .map(s => JSON.parse(s)).sort((a,b) => a.k.localeCompare(b.k));
-  const corbans  = [...new Set(prodData.map(r => r.corban))].sort();
-  const convenios= [...new Set(prodData.map(r => r.convenio))].sort();
+  const corbans  = [...new Set(prodData.map(r => r.cb))].sort();
+  const convenios= [...new Set(prodData.map(r => r.cv))].sort();
 
-  const selIni = document.getElementById('pf-sem-ini');
-  const selFim = document.getElementById('pf-sem-fim');
-  selIni.innerHTML = semanas.map(s=>`<option value="${s.k}">${s.l}</option>`).join('');
-  selFim.innerHTML  = semanas.map(s=>`<option value="${s.k}">${s.l}</option>`).join('');
-  selFim.selectedIndex = semanas.length - 1;
+  const si = document.getElementById('pf-sem-ini');
+  const sf = document.getElementById('pf-sem-fim');
+  si.innerHTML = sems.map(s=>`<option value="${s.k}">${s.l}</option>`).join('');
+  sf.innerHTML = sems.map(s=>`<option value="${s.k}">${s.l}</option>`).join('');
+  sf.selectedIndex = sems.length - 1;
 
-  // Populate checkbox dropdowns
-  prodDDOpts['pf-corban'] = corbans;
+  prodDDOpts['pf-corban']   = corbans;
   prodDDOpts['pf-convenio'] = convenios;
   renderProdDDItems('pf-corban', corbans);
   renderProdDDItems('pf-convenio', convenios);
@@ -1282,296 +1277,204 @@ function clearProducao() {
   document.getElementById('prod-content').style.display = 'none';
   document.getElementById('prod-upload-info').style.display = 'none';
   document.getElementById('prod-file-input').value = '';
-  Object.values(prodCharts).forEach(c=>{try{c.destroy();}catch(e){}});
+  Object.values(prodCharts).forEach(c => { try { c.destroy(); } catch(e) {} });
   prodCharts = {};
+  Object.keys(prodDDState).forEach(k => prodDDState[k].clear());
 }
 
+// ── Checkbox dropdown helpers ──────────────────────────────────────
+function renderProdDDItems(key, opts) {
+  const el = document.getElementById(key+'-items');
+  if (!el) return;
+  el.innerHTML = opts.map(o => {
+    const id = 'pcb-'+key+'-'+o.replace(/[^a-z0-9]/gi,'_');
+    return `<div class="dd-item"><input type="checkbox" id="${id}" ${prodDDState[key].has(o)?'checked':''} onchange="prodDDToggle('${key}','${o.replace(/'/g,"\\'").replace(/"/g,'&quot;')}',this.checked)"><label for="${id}">${o}</label></div>`;
+  }).join('');
+}
+
+function filterProdDD(key, q) {
+  renderProdDDItems(key, prodDDOpts[key].filter(o => o.toLowerCase().includes(q.toLowerCase())));
+}
+
+function prodDDToggle(key, val, checked) {
+  if (checked) prodDDState[key].add(val); else prodDDState[key].delete(val);
+  updateProdDDBadge(key);
+  renderProdSelTags();
+  renderProducao();
+}
+
+function updateProdDDBadge(key) {
+  const n = prodDDState[key].size;
+  const badge = document.getElementById(key+'-badge');
+  const btn   = document.getElementById(key+'-btn');
+  if (badge) { badge.style.display = n > 0 ? 'inline' : 'none'; badge.textContent = n; }
+  if (btn) btn.classList.toggle('has-sel', n > 0);
+  const lbl = document.getElementById(key+'-label');
+  if (lbl) lbl.textContent = n > 0 ? prodDDLabels[key]+' ('+n+')' : prodDDLabels[key];
+}
+
+function clearProdDD(key) {
+  prodDDState[key].clear();
+  renderProdDDItems(key, prodDDOpts[key]);
+  updateProdDDBadge(key);
+  renderProdSelTags();
+  renderProducao();
+}
+
+function clearAllProdFilters() {
+  Object.keys(prodDDState).forEach(k => { prodDDState[k].clear(); renderProdDDItems(k, prodDDOpts[k]); updateProdDDBadge(k); });
+  renderProdSelTags();
+  renderProducao();
+}
+
+function renderProdSelTags() {
+  const all = [...[...prodDDState['pf-corban']].map(v=>({key:'pf-corban',v})), ...[...prodDDState['pf-convenio']].map(v=>({key:'pf-convenio',v}))];
+  const el = document.getElementById('prod-sel-tags');
+  if (el) el.innerHTML = all.map(t=>`<div class="sel-tag">${t.v}<button onclick="prodDDToggle('${t.key}','${t.v.replace(/'/g,"\\'")}',false)">×</button></div>`).join('');
+}
+
+// ── Filter ─────────────────────────────────────────────────────────
 function getFilteredProd() {
-  const sIni = document.getElementById('pf-sem-ini').value;
-  const sFim  = document.getElementById('pf-sem-fim').value;
-  const corban= document.getElementById('pf-corban').value;
-  const conv  = document.getElementById('pf-convenio').value;
-  return prodData.filter(r => {
-    if (r.semKey < sIni || r.semKey > sFim) return false;
-    if (corban && r.corban !== corban) return false;
-    if (conv   && r.convenio !== conv) return false;
-    return true;
-  });
+  const sI = document.getElementById('pf-sem-ini').value;
+  const sF = document.getElementById('pf-sem-fim').value;
+  const cos = prodDDState['pf-corban'];
+  const cvs = prodDDState['pf-convenio'];
+  return prodData.filter(r =>
+    r.semKey >= sI && r.semKey <= sF &&
+    (cos.size === 0 || cos.has(r.cb)) &&
+    (cvs.size === 0 || cvs.has(r.cv))
+  );
 }
 
+function sn(n) {
+  return n.replace(/ ASSESSORIA DE CR[EÉ]DITO LTDA/,'').replace(/ COBRANCA EXTRAJUDICIAL E PROMOCAO DE VENDAS LTDA/,'').replace(/ GESTAO FINANCEIRA/,'').replace(/ LTDA/,'').trim();
+}
+
+function fmtBR(v) {
+  return Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+// ── Render ─────────────────────────────────────────────────────────
 function renderProducao() {
   const data = getFilteredProd();
-  Object.values(prodCharts).forEach(c=>{try{c.destroy();}catch(e){}});
+  Object.values(prodCharts).forEach(c => { try { c.destroy(); } catch(e) {} });
   prodCharts = {};
 
-  // ── KPIs ──
-  const total = data.reduce((s,r)=>s+r.valorLiq,0);
-  const nContr= data.length;
-  const ticket= nContr ? total/nContr : 0;
-  const parMed= nContr ? data.reduce((s,r)=>s+r.parcela,0)/nContr : 0;
+  const tot = data.reduce((s,r)=>s+r.vl,0);
+  const nC  = data.length;
+  const tick = nC ? tot/nC : 0;
+  const par  = nC ? data.reduce((s,r)=>s+r.pa,0)/nC : 0;
 
   document.getElementById('prod-kpis').innerHTML = [
-    {l:'Total Produzido',   v:'R$ '+fmtBR(total)},
-    {l:'Contratos',         v:nContr},
-    {l:'Ticket Médio',      v:'R$ '+fmtBR(ticket)},
-    {l:'Parcela Média',     v:'R$ '+fmtBR(parMed)},
-    {l:'Corbans Ativos',    v:new Set(data.map(r=>r.corban)).size},
-    {l:'Convênios Ativos',  v:new Set(data.map(r=>r.convenio)).size},
-  ].map(k=>`<div class="kpi-card"><div class="label">${k.l}</div><div class="value" style="font-size:22px">${k.v}</div></div>`).join('');
+    {l:'Total Produzido',   v:'R$ '+fmtBR(tot)},
+    {l:'Contratos',         v:nC},
+    {l:'Ticket Médio',      v:'R$ '+fmtBR(tick)},
+    {l:'Parcela Média',     v:'R$ '+fmtBR(par)},
+    {l:'Corbans Ativos',    v:new Set(data.map(r=>r.cb)).size},
+    {l:'Convênios Ativos',  v:new Set(data.map(r=>r.cv)).size},
+  ].map(k=>`<div class="kpi-card"><div class="label">${k.l}</div><div class="value" style="font-size:20px">${k.v}</div></div>`).join('');
 
-  // ── Semanas ordenadas ──
-  const semanas = [...new Set(data.map(r=>JSON.stringify({k:r.semKey,l:r.semLabel})))]
+  const sems = [...new Set(data.map(r=>JSON.stringify({k:r.semKey,l:r.semLabel})))]
     .map(s=>JSON.parse(s)).sort((a,b)=>a.k.localeCompare(b.k));
-  const semLabels = semanas.map(s=>s.l);
-  const semKeys   = semanas.map(s=>s.k);
+  const sL = sems.map(s=>s.l), sK = sems.map(s=>s.k);
 
-  // ── Gráfico semanal valor ──
-  const semValor = semKeys.map(k => data.filter(r=>r.semKey===k).reduce((s,r)=>s+r.valorLiq,0));
-  prodCharts.semVal = new Chart(document.getElementById('chartProdSemanal'), {
-    type:'bar',
-    data:{labels:semLabels,datasets:[{label:'Valor Líquido',data:semValor,backgroundColor:'#2d8a47',borderRadius:5,borderSkipped:false}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:v=>'R$ '+fmtBR(v.raw)}}},
-      scales:{y:{ticks:{callback:v=>'R$'+fmt(v)},grid:{color:'#f0f4f1'}},x:{grid:{display:false},ticks:{font:{size:9},maxRotation:45,autoSkip:false}}}}
-  });
+  const barOpts = {responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:v=>'R$ '+fmtBR(v.raw)}}},
+    scales:{y:{ticks:{callback:v=>'R$'+fmt(v)},grid:{color:'#f0f4f1'}},x:{grid:{display:false},ticks:{font:{size:9},maxRotation:45,autoSkip:false}}}};
 
-  // ── Gráfico contratos ──
-  const semContr = semKeys.map(k => data.filter(r=>r.semKey===k).length);
-  prodCharts.semCon = new Chart(document.getElementById('chartProdContratos'), {
-    type:'bar',
-    data:{labels:semLabels,datasets:[{label:'Contratos',data:semContr,backgroundColor:'#4caf6e',borderRadius:5,borderSkipped:false}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{y:{beginAtZero:true,ticks:{stepSize:1},grid:{color:'#f0f4f1'}},x:{grid:{display:false},ticks:{font:{size:9},maxRotation:45,autoSkip:false}}}}
-  });
+  prodCharts.sv = new Chart(document.getElementById('chartProdSemanal'), {type:'bar',
+    data:{labels:sL,datasets:[{label:'Valor',data:sK.map(k=>data.filter(r=>r.semKey===k).reduce((s,r)=>s+r.vl,0)),backgroundColor:'#2d8a47',borderRadius:5,borderSkipped:false}]},options:barOpts});
 
-  // ── Por Corban ──
-  const corbans = [...new Set(data.map(r=>r.corban))].sort();
-  const corbanStats = corbans.map(c => {
-    const rows = data.filter(r=>r.corban===c);
-    const val  = rows.reduce((s,r)=>s+r.valorLiq,0);
-    const n    = rows.length;
-    return {c, val, n, ticket: n?val/n:0};
-  }).sort((a,b)=>b.val-a.val);
+  prodCharts.sc = new Chart(document.getElementById('chartProdContratos'), {type:'bar',
+    data:{labels:sL,datasets:[{label:'Contratos',data:sK.map(k=>data.filter(r=>r.semKey===k).length),backgroundColor:'#4caf6e',borderRadius:5,borderSkipped:false}]},
+    options:{...barOpts,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1},grid:{color:'#f0f4f1'}},x:{grid:{display:false},ticks:{font:{size:9},maxRotation:45,autoSkip:false}}}}});
 
-  // Ranking valor
-  const maxVal = corbanStats[0]?.val||1;
-  document.getElementById('prod-ranking-valor').innerHTML = corbanStats.map((s,i)=>`
-    <li>
-      <div class="rank-num">${i+1}</div>
-      <div style="flex:1">
-        <div class="rank-name" style="font-size:11px">${s.c.replace('ASSESSORIA DE CRÉDITO LTDA','').replace('COBRANCA EXTRAJUDICIAL E PROMOCAO DE VENDAS LTDA','').replace('GESTAO FINANCEIRA','').trim()}</div>
-        <div class="pb-wrap"><div class="pb-fill" style="width:${(s.val/maxVal*100).toFixed(0)}%"></div></div>
-      </div>
-      <div class="rank-val">R$ ${fmt(s.val)}</div>
-    </li>`).join('');
+  const corbans = [...new Set(data.map(r=>r.cb))].sort();
+  const cSt = corbans.map(c => {
+    const rows = data.filter(r=>r.cb===c);
+    const v = rows.reduce((s,r)=>s+r.vl,0);
+    const n = rows.length;
+    return {c, v, n, t: n?v/n:0};
+  }).sort((a,b)=>b.v-a.v);
 
-  // Ranking ticket
-  const corbanByTicket = [...corbanStats].sort((a,b)=>b.ticket-a.ticket);
-  const maxTick = corbanByTicket[0]?.ticket||1;
-  document.getElementById('prod-ranking-ticket').innerHTML = corbanByTicket.map((s,i)=>`
-    <li>
-      <div class="rank-num">${i+1}</div>
-      <div style="flex:1">
-        <div class="rank-name" style="font-size:11px">${s.c.replace('ASSESSORIA DE CRÉDITO LTDA','').replace('COBRANCA EXTRAJUDICIAL E PROMOCAO DE VENDAS LTDA','').replace('GESTAO FINANCEIRA','').trim()}</div>
-        <div class="pb-wrap"><div class="pb-fill" style="width:${(s.ticket/maxTick*100).toFixed(0)}%"></div></div>
-      </div>
-      <div class="rank-val">R$ ${fmtBR(s.ticket)}</div>
-    </li>`).join('');
+  const mV = cSt[0]?.v||1;
+  const mT = [...cSt].sort((a,b)=>b.t-a.t)[0]?.t||1;
 
-  // Cards por corban
-  const lastSemKey = semKeys[semKeys.length-1];
-  const prevSemKey = semKeys[semKeys.length-2];
-  document.getElementById('prod-corban-cards').innerHTML = corbanStats.map((s,i)=>{
-    const lastVal = data.filter(r=>r.corban===s.c&&r.semKey===lastSemKey).reduce((x,r)=>x+r.valorLiq,0);
-    const prevVal = data.filter(r=>r.corban===s.c&&r.semKey===prevSemKey).reduce((x,r)=>x+r.valorLiq,0);
-    const diff = lastVal - prevVal;
-    const trendCls = diff>0?'trend-up':diff<0?'trend-down':'trend-eq';
-    const trendTxt = diff>0?`▲ +R$ ${fmtBR(diff)} vs semana anterior`:diff<0?`▼ -R$ ${fmtBR(Math.abs(diff))} vs semana anterior`:'= Igual à semana anterior';
-    const shortName = s.c.replace(' ASSESSORIA DE CRÉDITO LTDA','').replace(' COBRANCA EXTRAJUDICIAL E PROMOCAO DE VENDAS LTDA','').replace(' GESTAO FINANCEIRA','').replace(' LTDA','').trim();
+  document.getElementById('prod-ranking-valor').innerHTML = cSt.map((s,i)=>
+    `<li><div class="rank-num">${i+1}</div><div style="flex:1"><div class="rank-name" style="font-size:11px">${sn(s.c)}</div>
+    <div class="pb-wrap"><div class="pb-fill" style="width:${(s.v/mV*100).toFixed(0)}%"></div></div></div>
+    <div class="rank-val">R$ ${fmt(s.v)}</div></li>`).join('');
+
+  document.getElementById('prod-ranking-ticket').innerHTML = [...cSt].sort((a,b)=>b.t-a.t).map((s,i)=>
+    `<li><div class="rank-num">${i+1}</div><div style="flex:1"><div class="rank-name" style="font-size:11px">${sn(s.c)}</div>
+    <div class="pb-wrap"><div class="pb-fill" style="width:${(s.t/mT*100).toFixed(0)}%"></div></div></div>
+    <div class="rank-val">R$ ${fmtBR(s.t)}</div></li>`).join('');
+
+  const lsK = sK[sK.length-1], psK = sK[sK.length-2];
+  document.getElementById('prod-corban-cards').innerHTML = cSt.map((s,i) => {
+    const lv = data.filter(r=>r.cb===s.c&&r.semKey===lsK).reduce((x,r)=>x+r.vl,0);
+    const pv = data.filter(r=>r.cb===s.c&&r.semKey===psK).reduce((x,r)=>x+r.vl,0);
+    const d  = lv-pv;
+    const tc = d>0?'trend-up':d<0?'trend-down':'trend-eq';
+    const tt = d>0?`▲ +R$ ${fmtBR(d)} vs semana anterior`:d<0?`▼ -R$ ${fmtBR(Math.abs(d))} vs semana anterior`:'= Igual à semana anterior';
     return `<div class="prod-cc">
-      <div class="prod-cc-header">
-        <div>
-          <div class="prod-cc-name">${shortName}</div>
-          <div class="prod-cc-rank">#${i+1} em produção</div>
-        </div>
-        <div style="text-align:right;font-size:11px;color:var(--tm)">${s.n} contratos</div>
-      </div>
+      <div class="prod-cc-name">${sn(s.c)}</div>
+      <div class="prod-cc-rank">#${i+1} · ${s.n} contratos</div>
       <div class="prod-cc-metrics">
-        <div class="prod-cc-m"><div class="l">Total</div><div class="v">R$ ${fmt(s.val)}</div></div>
-        <div class="prod-cc-m"><div class="l">Ticket Médio</div><div class="v">R$ ${fmtBR(s.ticket)}</div></div>
-        <div class="prod-cc-m"><div class="l">Última semana</div><div class="v">R$ ${fmt(lastVal)}</div></div>
+        <div class="prod-cc-m"><div class="l">Total</div><div class="v">R$ ${fmt(s.v)}</div></div>
+        <div class="prod-cc-m"><div class="l">Ticket Médio</div><div class="v">R$ ${fmtBR(s.t)}</div></div>
+        <div class="prod-cc-m"><div class="l">Última semana</div><div class="v">R$ ${fmt(lv)}</div></div>
       </div>
-      <div class="prod-cc-trend"><span class="${trendCls}">${trendTxt}</span></div>
+      <div class="prod-cc-trend"><span class="${tc}">${tt}</span></div>
     </div>`;
   }).join('');
 
-  // ── Por Convênio ──
-  const convenios = [...new Set(data.map(r=>r.convenio))].sort();
-  const convStats = convenios.map(c=>{
-    const rows = data.filter(r=>r.convenio===c);
-    const val  = rows.reduce((s,r)=>s+r.valorLiq,0);
-    const n    = rows.length;
-    const parMed = n ? rows.reduce((s,r)=>s+r.parcela,0)/n : 0;
-    const corbansSet = [...new Set(rows.map(r=>r.corban))];
-    return {c,val,n,ticket:n?val/n:0,parMed,corbans:corbansSet};
-  }).sort((a,b)=>b.val-a.val);
+  const lineOpts = {responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:true,position:'bottom',labels:{font:{size:10},padding:12,usePointStyle:true}},
+      tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: R$ ${fmtBR(ctx.raw)}`}}},
+    scales:{y:{ticks:{callback:v=>'R$'+fmt(v)},grid:{color:'#f0f4f1'}},x:{grid:{display:false},ticks:{font:{size:9},maxRotation:45,autoSkip:false}}}};
 
-  // Gráfico valor por convênio
-  prodCharts.convVal = new Chart(document.getElementById('chartConvenioValor'),{
-    type:'bar',
-    data:{
-      labels:convStats.map(s=>s.c.replace('Pref. ','').replace('Câm. ','')),
-      datasets:[{label:'Valor Total',data:convStats.map(s=>s.val),backgroundColor:CONV_COLORS.slice(0,convStats.length),borderRadius:5,borderSkipped:false}]
-    },
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:v=>'R$ '+fmtBR(v.raw)}}},
-      scales:{y:{ticks:{callback:v=>'R$'+fmt(v)},grid:{color:'#f0f4f1'}},x:{grid:{display:false},ticks:{font:{size:10}}}}}
-  });
+  prodCharts.cs = new Chart(document.getElementById('chartCorbanSemanal'), {type:'line',
+    data:{labels:sL,datasets:corbans.map((c,i)=>({
+      label:sn(c),data:sK.map(k=>data.filter(r=>r.cb===c&&r.semKey===k).reduce((s,r)=>s+r.vl,0)),
+      borderColor:CORBAN_COLORS[i%CORBAN_COLORS.length],backgroundColor:CORBAN_COLORS[i%CORBAN_COLORS.length]+'22',
+      tension:.3,fill:false,pointRadius:4,borderWidth:2,borderDash:i>3?[5,3]:[]
+    }))},options:lineOpts});
 
-  // Gráfico ticket médio
-  prodCharts.convTick = new Chart(document.getElementById('chartConvenioTicket'),{
-    type:'bar',
-    data:{
-      labels:convStats.map(s=>s.c.replace('Pref. ','').replace('Câm. ','')),
-      datasets:[{label:'Ticket Médio',data:convStats.map(s=>s.ticket),backgroundColor:CONV_COLORS.slice(0,convStats.length),borderRadius:5,borderSkipped:false}]
-    },
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:v=>'R$ '+fmtBR(v.raw)}}},
-      scales:{y:{ticks:{callback:v=>'R$'+fmt(v)},grid:{color:'#f0f4f1'}},x:{grid:{display:false},ticks:{font:{size:10}}}}}
-  });
+  const convenios = [...new Set(data.map(r=>r.cv))].sort();
+  const cvSt = convenios.map(c => {
+    const rows = data.filter(r=>r.cv===c);
+    const v = rows.reduce((s,r)=>s+r.vl,0);
+    const n = rows.length;
+    const pm = n ? rows.reduce((s,r)=>s+r.pa,0)/n : 0;
+    const cbl = [...new Set(rows.map(r=>r.cb))];
+    return {c, v, n, t: n?v/n:0, pm, cbl};
+  }).sort((a,b)=>b.v-a.v);
 
-  // Tabela convênios
-  document.getElementById('prod-conv-table').innerHTML = convStats.map(s=>`
-    <tr>
-      <td style="font-weight:600">${s.c}</td>
-      <td style="text-align:right">${s.n}</td>
-      <td class="pot-val" style="text-align:right">R$ ${fmtBR(s.val)}</td>
-      <td class="pot-val" style="text-align:right">R$ ${fmtBR(s.ticket)}</td>
-      <td style="text-align:right">R$ ${fmtBR(s.parMed)}</td>
-      <td style="font-size:11px">${s.corbans.map(c=>c.replace(' ASSESSORIA DE CRÉDITO LTDA','').replace(' COBRANCA EXTRAJUDICIAL E PROMOCAO DE VENDAS LTDA','').replace(' GESTAO FINANCEIRA','').replace(' LTDA','').trim()).join(', ')}</td>
-    </tr>`).join('');
+  const cvL = cvSt.map(s=>s.c.replace('Pref. ','').replace('Câm. ',''));
 
-  // ── Evolução semanal por Corban ──
-  prodCharts.corbanSem = new Chart(document.getElementById('chartCorbanSemanal'),{
-    type:'line',
-    data:{
-      labels:semLabels,
-      datasets:corbans.map((c,i)=>({
-        label:c.replace(' ASSESSORIA DE CRÉDITO LTDA','').replace(' COBRANCA EXTRAJUDICIAL E PROMOCAO DE VENDAS LTDA','').replace(' GESTAO FINANCEIRA','').replace(' LTDA','').trim(),
-        data:semKeys.map(k=>data.filter(r=>r.corban===c&&r.semKey===k).reduce((s,r)=>s+r.valorLiq,0)),
-        borderColor:CORBAN_COLORS[i%CORBAN_COLORS.length],
-        backgroundColor:CORBAN_COLORS[i%CORBAN_COLORS.length]+'22',
-        tension:.3,fill:false,pointRadius:4,borderWidth:2,
-        borderDash: i>3?[5,3]:[]
-      }))
-    },
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:true,position:'bottom',labels:{font:{size:10},padding:12,usePointStyle:true}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: R$ ${fmtBR(ctx.raw)}`}}},
-      scales:{y:{ticks:{callback:v=>'R$'+fmt(v)},grid:{color:'#f0f4f1'}},x:{grid:{display:false},ticks:{font:{size:9},maxRotation:45,autoSkip:false}}}}
-  });
+  prodCharts.cvv = new Chart(document.getElementById('chartConvenioValor'), {type:'bar',
+    data:{labels:cvL,datasets:[{label:'Valor Total',data:cvSt.map(s=>s.v),backgroundColor:CONV_COLORS.slice(0,cvSt.length),borderRadius:5,borderSkipped:false}]},options:barOpts});
 
-  // ── Evolução semanal por Convênio ──
-  prodCharts.convSem = new Chart(document.getElementById('chartConvenioSemanal'),{
-    type:'line',
-    data:{
-      labels:semLabels,
-      datasets:convenios.map((c,i)=>({
-        label:c,
-        data:semKeys.map(k=>data.filter(r=>r.convenio===c&&r.semKey===k).reduce((s,r)=>s+r.valorLiq,0)),
-        borderColor:CONV_COLORS[i%CONV_COLORS.length],
-        backgroundColor:CONV_COLORS[i%CONV_COLORS.length]+'22',
-        tension:.3,fill:false,pointRadius:4,borderWidth:2,
-        borderDash: i>2?[5,3]:[]
-      }))
-    },
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:true,position:'bottom',labels:{font:{size:10},padding:12,usePointStyle:true}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: R$ ${fmtBR(ctx.raw)}`}}},
-      scales:{y:{ticks:{callback:v=>'R$'+fmt(v)},grid:{color:'#f0f4f1'}},x:{grid:{display:false},ticks:{font:{size:9},maxRotation:45,autoSkip:false}}}}
-  });
-}
+  prodCharts.cvt = new Chart(document.getElementById('chartConvenioTicket'), {type:'bar',
+    data:{labels:cvL,datasets:[{label:'Ticket Médio',data:cvSt.map(s=>s.t),backgroundColor:CONV_COLORS.slice(0,cvSt.length),borderRadius:5,borderSkipped:false}]},options:barOpts});
 
-function fmtBR(v){
-  return Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  prodCharts.cvs = new Chart(document.getElementById('chartConvenioSemanal'), {type:'line',
+    data:{labels:sL,datasets:convenios.map((c,i)=>({
+      label:c,data:sK.map(k=>data.filter(r=>r.cv===c&&r.semKey===k).reduce((s,r)=>s+r.vl,0)),
+      borderColor:CONV_COLORS[i%CONV_COLORS.length],backgroundColor:CONV_COLORS[i%CONV_COLORS.length]+'22',
+      tension:.3,fill:false,pointRadius:4,borderWidth:2,borderDash:i>2?[5,3]:[]
+    }))},options:lineOpts});
+
+  document.getElementById('prod-conv-table').innerHTML = cvSt.map(s=>
+    `<tr><td style="font-weight:600">${s.c}</td><td style="text-align:right">${s.n}</td>
+    <td class="pot-val" style="text-align:right">R$ ${fmtBR(s.v)}</td>
+    <td class="pot-val" style="text-align:right">R$ ${fmtBR(s.t)}</td>
+    <td style="text-align:right">R$ ${fmtBR(s.pm)}</td>
+    <td style="font-size:11px">${s.cbl.map(c=>sn(c)).join(', ')}</td></tr>`).join('');
 }
 // ── FIM PRODUÇÃO ──────────────────────────────────────────────────
 
-
-// ── NOVO CONVÊNIO ──────────────────────────────────────────────────
-let ncResponsavel = '';
-
-function abrirNovoConv(){
-  document.getElementById('nc-modal-bg').classList.add('open');
-  document.getElementById('nc-auth-step').style.display='block';
-  document.getElementById('nc-blocked-step').style.display='none';
-  document.getElementById('nc-form-step').style.display='none';
-  document.getElementById('nc-auth-select').value='';
-}
-
-function fecharNovoConv(){
-  document.getElementById('nc-modal-bg').classList.remove('open');
-  ncResponsavel='';
-}
-
-function ncAutenticar(){
-  const sel=document.getElementById('nc-auth-select').value;
-  if(!sel){showToast('Selecione seu nome para continuar.',true);return;}
-  if(sel==='outro'){
-    document.getElementById('nc-auth-step').style.display='none';
-    document.getElementById('nc-blocked-step').style.display='block';
-    return;
-  }
-  ncResponsavel=sel;
-  document.getElementById('nc-auth-step').style.display='none';
-  document.getElementById('nc-form-step').style.display='block';
-  document.getElementById('nc-resp-nome').textContent=sel;
-  // Reset form
-  ['nc-nome','nc-parceiro','nc-proc','nc-obs'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  ['nc-tipo','nc-status','nc-capag','nc-ifadm','nc-contrat'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  ['nc-colab','nc-pot','nc-pop','nc-margem'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  document.querySelectorAll('input[name="nc-api"], input[name="nc-integ"], input[name="nc-reav"]').forEach(r=>{if(r.value==='')r.checked=true;});
-}
-
-function salvarNovoConv(){
-  const nome=document.getElementById('nc-nome').value.trim();
-  const tipo=document.getElementById('nc-tipo').value;
-  const status=document.getElementById('nc-status').value;
-  if(!nome){showToast('Preencha o nome do convênio.',true);return;}
-  if(!tipo){showToast('Selecione o tipo.',true);return;}
-  if(!status){showToast('Selecione o status.',true);return;}
-
-  const getRadio=name=>{const r=document.querySelector('input[name="'+name+'"]:checked');return r?r.value:'';};
-  const margem=document.getElementById('nc-margem').value;
-
-  const dados={
-    nome,
-    tipo,
-    status,
-    capag:    document.getElementById('nc-capag').value,
-    ifAdm:    document.getElementById('nc-ifadm').value,
-    margem:   margem ? parseFloat(margem)/100 : '',
-    colab:    document.getElementById('nc-colab').value || '',
-    pot:      document.getElementById('nc-pot').value || '',
-    pop:      document.getElementById('nc-pop').value || '',
-    proc:     document.getElementById('nc-proc').value.trim(),
-    api:      getRadio('nc-api'),
-    integ:    getRadio('nc-integ'),
-    reav:     getRadio('nc-reav'),
-    contrat:  document.getElementById('nc-contrat').value,
-    parceiro: document.getElementById('nc-parceiro').value.trim(),
-    obs:      document.getElementById('nc-obs').value.trim(),
-    responsavel: ncResponsavel,
-  };
-
-  const btn=document.getElementById('nc-save-btn');
-  btn.disabled=true;btn.textContent='Salvando...';
-
-  fetch('/api/adicionar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(dados)})
-    .then(r=>r.json())
-    .then(r=>{btn.disabled=false;btn.textContent='💾 Salvar Convênio';if(r.ok){showToast('✓ Convênio adicionado com sucesso!');fecharNovoConv();loadData();}else{showToast(r.msg,true);}})
-    .catch(e=>{btn.disabled=false;btn.textContent='💾 Salvar Convênio';showToast('Erro: '+e.message,true);});
-}
-
-document.getElementById('nc-modal-bg').addEventListener('click',function(e){
-  if(e.target===this)fecharNovoConv();
-});
-// ── FIM NOVO CONVÊNIO ──────────────────────────────────────────────
 
 
 
