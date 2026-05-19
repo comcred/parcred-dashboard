@@ -1478,6 +1478,79 @@ function renderProducao() {
 
 
 
+// ── NOVO CONVÊNIO ──────────────────────────────────────────────────
+let ncResponsavel = '';
+
+function abrirNovoConv(){
+  document.getElementById('nc-modal-bg').classList.add('open');
+  document.getElementById('nc-auth-step').style.display='block';
+  document.getElementById('nc-blocked-step').style.display='none';
+  document.getElementById('nc-form-step').style.display='none';
+  document.getElementById('nc-auth-select').value='';
+}
+
+function fecharNovoConv(){
+  document.getElementById('nc-modal-bg').classList.remove('open');
+  ncResponsavel='';
+}
+
+function ncAutenticar(){
+  const sel=document.getElementById('nc-auth-select').value;
+  if(!sel){showToast('Selecione seu nome para continuar.',true);return;}
+  if(sel==='outro'){
+    document.getElementById('nc-auth-step').style.display='none';
+    document.getElementById('nc-blocked-step').style.display='block';
+    return;
+  }
+  ncResponsavel=sel;
+  document.getElementById('nc-auth-step').style.display='none';
+  document.getElementById('nc-form-step').style.display='block';
+  document.getElementById('nc-resp-nome').textContent=sel;
+  ['nc-nome','nc-parceiro','nc-proc','nc-obs'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['nc-tipo','nc-status','nc-capag','nc-ifadm','nc-contrat'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['nc-colab','nc-pot','nc-pop','nc-margem'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  document.querySelectorAll('input[name="nc-api"], input[name="nc-integ"], input[name="nc-reav"]').forEach(r=>{if(r.value==='')r.checked=true;});
+}
+
+function salvarNovoConv(){
+  const nome=document.getElementById('nc-nome').value.trim();
+  const tipo=document.getElementById('nc-tipo').value;
+  const status=document.getElementById('nc-status').value;
+  if(!nome){showToast('Preencha o nome do convênio.',true);return;}
+  if(!tipo){showToast('Selecione o tipo.',true);return;}
+  if(!status){showToast('Selecione o status.',true);return;}
+  const getRadio=name=>{const r=document.querySelector('input[name="'+name+'"]:checked');return r?r.value:'';};
+  const margem=document.getElementById('nc-margem').value;
+  const dados={
+    nome, tipo, status,
+    capag:    document.getElementById('nc-capag').value,
+    ifAdm:    document.getElementById('nc-ifadm').value,
+    margem:   margem ? parseFloat(margem)/100 : '',
+    colab:    document.getElementById('nc-colab').value||'',
+    pot:      document.getElementById('nc-pot').value||'',
+    pop:      document.getElementById('nc-pop').value||'',
+    proc:     document.getElementById('nc-proc').value.trim(),
+    api:      getRadio('nc-api'),
+    integ:    getRadio('nc-integ'),
+    reav:     getRadio('nc-reav'),
+    contrat:  document.getElementById('nc-contrat').value,
+    parceiro: document.getElementById('nc-parceiro').value.trim(),
+    obs:      document.getElementById('nc-obs').value.trim(),
+    responsavel: ncResponsavel,
+  };
+  const btn=document.getElementById('nc-save-btn');
+  btn.disabled=true;btn.textContent='Salvando...';
+  fetch('/api/adicionar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(dados)})
+    .then(r=>r.json())
+    .then(r=>{btn.disabled=false;btn.textContent='💾 Salvar Convênio';if(r.ok){showToast('✓ Convênio adicionado com sucesso!');fecharNovoConv();loadData();}else{showToast(r.msg,true);}})
+    .catch(e=>{btn.disabled=false;btn.textContent='💾 Salvar Convênio';showToast('Erro: '+e.message,true);});
+}
+
+document.getElementById('nc-modal-bg').addEventListener('click',function(e){
+  if(e.target===this)fecharNovoConv();
+});
+// ── FIM NOVO CONVÊNIO ──────────────────────────────────────────────
+
 function loadData(){
   sl(true);hideErr();
   fetch('/api/dados')
