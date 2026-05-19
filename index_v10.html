@@ -619,7 +619,7 @@ tbody td{padding:9px 14px;vertical-align:middle}
               <span style="font-size:10px;color:var(--tm)">▾</span>
             </div>
           </div>
-          <div class="dd-menu" id="pf-corban-menu" style="display:none">
+          <div class="dd-menu" id="dd-pf-corban-menu" style="display:none">
             <input class="dd-search" placeholder="Buscar corban..." oninput="filterProdDD('pf-corban',this.value)">
             <div id="pf-corban-items"></div>
             <div class="dd-footer">
@@ -636,7 +636,7 @@ tbody td{padding:9px 14px;vertical-align:middle}
               <span style="font-size:10px;color:var(--tm)">▾</span>
             </div>
           </div>
-          <div class="dd-menu" id="pf-convenio-menu" style="display:none">
+          <div class="dd-menu" id="dd-pf-convenio-menu" style="display:none">
             <input class="dd-search" placeholder="Buscar convênio..." oninput="filterProdDD('pf-convenio',this.value)">
             <div id="pf-convenio-items"></div>
             <div class="dd-footer">
@@ -1235,7 +1235,7 @@ function processProducaoData(rows) {
     const f  = d => d ? `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}` : '';
     const fy = d => d ? `${f(d)}/${String(d.getFullYear()).slice(2)}` : '';
 
-    const cb = (r['Ponto de Venda'] || '').trim();
+    const cb = (r['NOME PROMOTORA'] || r['Ponto de Venda'] || '').trim();
     const cv = (r['Empregador'] || '').trim()
       .replace('PREFEITURA MUNICIPAL DE ','Pref. ')
       .replace('CÂMARA MUNICIPAL DE ','Câm. ')
