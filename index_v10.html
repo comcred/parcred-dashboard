@@ -1206,6 +1206,7 @@ function handleCSV(input) {
     header: true,
     skipEmptyLines: true,
     encoding: 'UTF-8',
+    delimiter: ';',
     complete: function(results) {
       processProducaoData(results.data);
     }
