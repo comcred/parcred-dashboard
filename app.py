@@ -17,6 +17,127 @@ STATUS_LIST = ['FILA','CONSULTA DE DADOS','CONSULTA TÉCNICA PROCESSADORA','JUR�
 ETAPAS_ALERTA = ['FILA','CONSULTA DE DADOS','CONSULTA TÉCNICA PROCESSADORA','JURÍDICO','COMITÊ EXECUTIVO','PENDÊNCIA COMITÊ','CREDENCIAMENTO','DOCS ENVIADOS','DOCS EM ANÁLISE','ASSINATURA','RUBRICA','CONTRATO PROCESSADORA']
 DIAS_ALERTA = 15
 
+import subprocess
+import threading
+import csv
+import io
+from datetime import datetime, timedelta
+
+# Cache for banksoft data
+_banksoft_cache = {'data': None, 'updated': None}
+_banksoft_lock = threading.Lock()
+
+def instalar_playwright():
+    """Instala browsers do playwright se necessário"""
+    try:
+        subprocess.run(['playwright', 'install', 'chromium', '--with-deps'], 
+                      capture_output=True, timeout=120)
+    except: pass
+
+def buscar_producao_banksoft():
+    """Acessa o sistema Banksoft e baixa o relatório de produção"""
+    try:
+        from playwright.sync_api import sync_playwright
+        
+        usuario = os.environ.get('BANKSOFT_USER', '')
+        senha   = os.environ.get('BANKSOFT_PASS', '')
+        
+        if not usuario or not senha:
+            return {'error': 'Credenciais não configuradas'}
+        
+        # Data de início: 01/05/2026, fim: hoje
+        hoje     = datetime.now(BR_TZ)
+        dt_ini   = '01/05/2026'
+        dt_fim   = hoje.strftime('%d/%m/%Y')
+        
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=['--no-sandbox','--disable-dev-shm-usage'])
+            page    = browser.new_page()
+            
+            # Login
+            page.goto('https://parcred.banksofttecnologia.com.br/AppConsig/Login/ICLogin?ReturnUrl=%2FAppConsig%2FPages%2FMenu%2FICMenu', timeout=30000)
+            page.wait_for_load_state('networkidle')
+            
+            # Preenche usuário e senha
+            page.fill('input[name*="usu"], input[id*="usu"], input[type="text"]', usuario)
+            page.fill('input[name*="sen"], input[id*="sen"], input[type="password"]', senha)
+            page.click('button[type="submit"], input[type="submit"]')
+            page.wait_for_load_state('networkidle')
+            
+            # Navega para Frente de Empréstimo
+            page.wait_for_timeout(2000)
+            
+            # Clica em Relatórios
+            page.click('text=Relatórios', timeout=10000)
+            page.wait_for_timeout(1000)
+            
+            # Clica em Produção Analítico
+            page.click('text=Produção Analítico', timeout=10000)
+            page.wait_for_load_state('networkidle')
+            page.wait_for_timeout(2000)
+            
+            # Preenche período
+            campos_data = page.query_selector_all('input[type="text"]')
+            # Tenta preencher datas
+            for campo in campos_data:
+                placeholder = campo.get_attribute('placeholder') or ''
+                if 'ini' in placeholder.lower() or 'início' in placeholder.lower() or 'de' in placeholder.lower():
+                    campo.fill(dt_ini)
+                elif 'fim' in placeholder.lower() or 'até' in placeholder.lower():
+                    campo.fill(dt_fim)
+            
+            # Situação = Integrado
+            try:
+                page.select_option('select', 'INT')
+            except:
+                try:
+                    page.click('text=Integrado')
+                except: pass
+            
+            # Exportar CSV
+            with page.expect_download(timeout=30000) as download_info:
+                page.click('text=Exportar, text=CSV, text=Export', timeout=10000)
+            
+            download  = download_info.value
+            csv_bytes = download.read_bytes()
+            browser.close()
+            
+            # Processa CSV
+            text = csv_bytes.decode('utf-8-sig')
+            reader = csv.DictReader(io.StringIO(text), delimiter=';')
+            rows = list(reader)
+            
+            return {'rows': rows, 'total': len(rows), 'atualizado': hoje.strftime('%d/%m/%Y %H:%M')}
+    
+    except Exception as e:
+        return {'error': f'Erro ao acessar sistema: {str(e)}'}
+
+@app.route('/api/producao')
+def get_producao():
+    """Retorna dados de produção do Banksoft com cache de 1 hora"""
+    global _banksoft_cache
+    
+    forcar = request.args.get('forcar', 'false') == 'true'
+    
+    with _banksoft_lock:
+        agora = datetime.now(BR_TZ)
+        cache_valido = (
+            _banksoft_cache['data'] is not None and
+            _banksoft_cache['updated'] is not None and
+            (agora - _banksoft_cache['updated']).seconds < 3600 and
+            not forcar
+        )
+        
+        if cache_valido:
+            return jsonify({**_banksoft_cache['data'], 'cache': True})
+        
+        resultado = buscar_producao_banksoft()
+        
+        if 'error' not in resultado:
+            _banksoft_cache = {'data': resultado, 'updated': agora}
+        
+        return jsonify({**resultado, 'cache': False})
+
 def get_client():
     creds_dict = json.loads(os.environ.get('GOOGLE_CREDS','{}'))
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
