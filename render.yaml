@@ -2,8 +2,12 @@ services:
   - type: web
     name: parcred-dashboard
     env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    buildCommand: pip install -r requirements.txt && playwright install chromium --with-deps
+    startCommand: gunicorn app:app --timeout 120
     envVars:
       - key: GOOGLE_CREDS
+        sync: false
+      - key: BANKSOFT_USER
+        sync: false
+      - key: BANKSOFT_PASS
         sync: false
