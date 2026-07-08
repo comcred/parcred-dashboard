@@ -40,133 +40,188 @@ def buscar_producao_banksoft():
 
         session = req_lib.Session()
         session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
         })
 
-        # GET login page to get tokens/cookies
-        r = session.get(f'{BANKSOFT_BASE}/Login/ICLogin', timeout=30)
+        # GET login page to capture VIEWSTATE and other hidden fields
+        r = session.get('https://parcred.banksofttecnologia.com.br/AppConsig/Login/ICLogin', timeout=30)
         
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(r.text, 'lxml')
-        
-        # Get hidden fields (CSRF tokens etc)
+
+        # Capture ALL hidden fields
         form_data = {}
-        for inp in soup.find_all('input', type='hidden'):
-            if inp.get('name'):
-                form_data[inp['name']] = inp.get('value', '')
-        
-        # Find username/password field names
-        user_field = 'login'
-        pass_field = 'senha'
         for inp in soup.find_all('input'):
-            name = (inp.get('name') or '').lower()
-            itype = (inp.get('type') or '').lower()
-            if itype == 'text' or 'usu' in name or 'login' in name or 'user' in name:
-                user_field = inp.get('name', user_field)
-            if itype == 'password' or 'sen' in name or 'pass' in name:
-                pass_field = inp.get('name', pass_field)
-        
-        form_data[user_field] = usuario
-        form_data[pass_field] = senha
+            name = inp.get('name','')
+            if name:
+                form_data[name] = inp.get('value','')
+
+        # Set credentials with exact field names
+        form_data['txtUsuario$CAMPO'] = usuario
+        form_data['txtSenha$CAMPO']   = senha
+
+        # ASP.NET requires __EVENTTARGET for button clicks via PostBack
+        # Find the login button
+        btn = soup.find('input', type='submit') or soup.find('button', type='submit')
+        if btn and btn.get('name'):
+            form_data[btn['name']] = btn.get('value','Entrar')
+        else:
+            # Try to find link button or set EVENTTARGET
+            for a in soup.find_all('a', href=True):
+                href = a.get('href','')
+                if 'doPostBack' in href and ('login' in href.lower() or 'entr' in href.lower() or 'acesso' in href.lower()):
+                    import re
+                    m = re.search(r"__doPostBack\('([^']+)'", href)
+                    if m:
+                        form_data['__EVENTTARGET'] = m.group(1)
+                        form_data['__EVENTARGUMENT'] = ''
 
         # POST login
-        r2 = session.post(f'{BANKSOFT_BASE}/Login/ICLogin', data=form_data, 
-                         allow_redirects=True, timeout=30)
-        
-        # Debug: capture login response info
-        login_debug = {
-            'url_after_login': r2.url,
-            'status': r2.status_code,
-            'has_menu': 'menu' in r2.url.lower() or 'home' in r2.url.lower(),
-            'page_title': '',
-            'form_fields_found': list(form_data.keys()),
-            'user_field_used': user_field,
-            'pass_field_used': pass_field,
-        }
-        try:
-            soup_debug = BeautifulSoup(r2.text, 'lxml')
-            title = soup_debug.find('title')
-            login_debug['page_title'] = title.get_text() if title else ''
-            # Check if still on login page
-            login_inputs = soup_debug.find_all('input', type='password')
-            login_debug['still_on_login'] = len(login_inputs) > 0
-            # Get all links from page
-            links = [a.get('href','') for a in soup_debug.find_all('a', href=True)][:10]
-            login_debug['links'] = links
-        except: pass
-        
-        if login_debug.get('still_on_login') or 'login' in r2.url.lower():
-            return {'error': f'Login falhou', 'debug': login_debug}
+        session.headers.update({
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Referer': 'https://parcred.banksofttecnologia.com.br/AppConsig/Login/ICLogin',
+            'Origin': 'https://parcred.banksofttecnologia.com.br',
+        })
 
-        # Get report page
-        r3 = session.get(f'{BANKSOFT_BASE}/Pages/Relatorio/ICRelatorioProducaoAnalitico', 
-                        timeout=30)
-        if r3.status_code != 200:
-            # Try to find report URL from menu
+        r2 = session.post(
+            'https://parcred.banksofttecnologia.com.br/AppConsig/Login/ICLogin',
+            data=form_data,
+            allow_redirects=True,
+            timeout=30
+        )
+
+        soup2 = BeautifulSoup(r2.text, 'lxml')
+        still_login = len(soup2.find_all('input', type='password')) > 0
+        page_title  = (soup2.find('title') or soup2.new_tag('x')).get_text(strip=True)
+
+        if still_login:
+            # Try with lnkAcessar or similar button
+            form_data['__EVENTTARGET'] = 'lnkAcessar'
+            form_data['__EVENTARGUMENT'] = ''
+            r2 = session.post(
+                'https://parcred.banksofttecnologia.com.br/AppConsig/Login/ICLogin',
+                data=form_data,
+                allow_redirects=True,
+                timeout=30
+            )
             soup2 = BeautifulSoup(r2.text, 'lxml')
-            links = soup2.find_all('a', href=True)
-            report_url = None
-            for link in links:
-                href = link.get('href','').lower()
-                text = link.get_text().lower()
-                if 'producao' in href or 'producao' in text or 'analitico' in href:
-                    report_url = link['href']
-                    break
-            if report_url:
-                if not report_url.startswith('http'):
-                    report_url = BANKSOFT_BASE + '/' + report_url.lstrip('/')
-                r3 = session.get(report_url, timeout=30)
+            still_login = len(soup2.find_all('input', type='password')) > 0
+            page_title  = (soup2.find('title') or soup2.new_tag('x')).get_text(strip=True)
 
+        if still_login:
+            # Get all links/buttons to debug
+            btns = [str(b) for b in soup.find_all(['input','button','a']) if b.get('type') in ['submit','button'] or 'doPostBack' in str(b)]
+            return {'error': 'Login ainda falhou', 'debug': {
+                'page_title': page_title,
+                'url': r2.url,
+                'buttons_found': btns[:5],
+                'form_fields_sent': list(form_data.keys())
+            }}
+
+        # Login OK! Now navigate to report
+        # Find Relatórios menu link
+        relat_url = None
+        for a in soup2.find_all('a', href=True):
+            txt  = a.get_text(strip=True).lower()
+            href = a.get('href','').lower()
+            if 'relat' in txt or 'relat' in href:
+                relat_url = a['href']
+                if not relat_url.startswith('http'):
+                    relat_url = 'https://parcred.banksofttecnologia.com.br' + relat_url
+                break
+
+        if not relat_url:
+            return {'error': 'Login OK mas menu Relatórios não encontrado', 'debug': {'page_title': page_title, 'url': r2.url}}
+
+        r3 = session.get(relat_url, timeout=30)
         soup3 = BeautifulSoup(r3.text, 'lxml')
-        
-        # Find form and fill dates + situacao
-        form3 = {}
-        for inp in soup3.find_all('input'):
-            if inp.get('name'):
-                form3[inp['name']] = inp.get('value','')
-        
-        # Set period and situacao
-        for inp in soup3.find_all('input', type='text'):
-            name = (inp.get('name') or '').lower()
-            placeholder = (inp.get('placeholder') or '').lower()
-            if 'ini' in name or 'inicio' in name or 'de' == name or 'ini' in placeholder:
-                form3[inp['name']] = dt_ini
-            elif 'fim' in name or 'ate' in name or 'fim' in placeholder:
-                form3[inp['name']] = dt_fim
-        
-        # Find situacao select
-        for sel in soup3.find_all('select'):
-            name = (sel.get('name') or '').lower()
-            if 'sit' in name or 'status' in name or 'situac' in name:
-                form3[sel['name']] = 'INT'
 
-        # Submit and get CSV
-        export_url = r3.url
-        r4 = session.post(export_url, data={**form3, 'exportar': 'csv', 'formato': 'csv'}, 
-                         timeout=60)
-        
-        # Check if response is CSV
-        content_type = r4.headers.get('Content-Type', '')
-        if 'csv' in content_type or 'text' in content_type or len(r4.content) > 1000:
-            try:
-                text = r4.content.decode('utf-8-sig')
-                reader = csv.DictReader(io.StringIO(text), delimiter=';')
-                rows = [dict(r) for r in reader]
-                if rows and len(rows[0]) > 3:
-                    return {
-                        'rows': rows, 
-                        'total': len(rows),
-                        'periodo': f'{dt_ini} a {dt_fim}',
-                        'atualizado': hoje.strftime('%d/%m/%Y %H:%M')
-                    }
-            except: pass
-        
-        return {'error': 'Não foi possível baixar o CSV. O sistema pode ter mudado o layout.', 
-                'debug_url': r3.url, 'debug_status': r4.status_code}
+        # Find Produção Analítico
+        prod_url = None
+        for a in soup3.find_all('a', href=True):
+            txt = a.get_text(strip=True).lower()
+            if 'producao' in txt or 'produção' in txt or 'analitico' in txt or 'analítico' in txt:
+                prod_url = a['href']
+                if not prod_url.startswith('http'):
+                    prod_url = 'https://parcred.banksofttecnologia.com.br' + prod_url
+                break
+
+        if not prod_url:
+            return {'error': 'Relatório de Produção não encontrado', 'debug': {'relat_url': relat_url}}
+
+        r4 = session.get(prod_url, timeout=30)
+        soup4 = BeautifulSoup(r4.text, 'lxml')
+
+        # Fill form
+        form4 = {}
+        for inp in soup4.find_all('input'):
+            if inp.get('name'):
+                form4[inp['name']] = inp.get('value','')
+
+        # Fill dates
+        for inp in soup4.find_all('input', type='text'):
+            name = (inp.get('name') or '').lower()
+            ph   = (inp.get('placeholder') or '').lower()
+            if any(x in name+ph for x in ['ini','inicio','início','de','from']):
+                form4[inp['name']] = dt_ini
+            elif any(x in name+ph for x in ['fim','até','ate','to','end']):
+                form4[inp['name']] = dt_fim
+
+        # Situação = Integrado
+        for sel in soup4.find_all('select'):
+            name = (sel.get('name') or '').lower()
+            if any(x in name for x in ['sit','status','situac']):
+                form4[sel['name']] = 'INT'
+
+        # Find export/CSV button
+        export_target = ''
+        for inp in soup4.find_all('input'):
+            val = (inp.get('value') or '').lower()
+            nm  = (inp.get('name') or '').lower()
+            if 'csv' in val or 'export' in val or 'csv' in nm:
+                export_target = inp.get('name','')
+                form4[inp['name']] = inp.get('value','')
+                break
+
+        if not export_target:
+            for a in soup4.find_all('a', href=True):
+                if 'doPostBack' in a.get('href','') and ('csv' in a.get_text().lower() or 'export' in a.get('href','').lower()):
+                    import re
+                    m = re.search(r"__doPostBack\('([^']+)'", a['href'])
+                    if m:
+                        form4['__EVENTTARGET'] = m.group(1)
+                        form4['__EVENTARGUMENT'] = ''
+                        export_target = m.group(1)
+                        break
+
+        r5 = session.post(prod_url, data=form4, allow_redirects=True, timeout=60)
+
+        # Parse CSV
+        content_type = r5.headers.get('Content-Type','')
+        if 'csv' in content_type or 'octet' in content_type or ('text' in content_type and ';' in r5.text[:500]):
+            text   = r5.content.decode('utf-8-sig', errors='replace')
+            reader = csv.DictReader(io.StringIO(text), delimiter=';')
+            rows   = [dict(row) for row in reader]
+            if rows:
+                return {'rows': rows, 'total': len(rows), 'periodo': f'{dt_ini} a {dt_fim}', 'atualizado': hoje.strftime('%d/%m/%Y %H:%M')}
+
+        return {'error': 'CSV não retornado', 'debug': {
+            'content_type': content_type,
+            'status': r5.status_code,
+            'response_preview': r5.text[:500],
+            'prod_url': prod_url,
+            'export_target': export_target
+        }}
 
     except Exception as e:
-        return {'error': str(e)}
+        import traceback
+        return {'error': str(e), 'traceback': traceback.format_exc()[-500:]}
+
+def _buscar_producao_banksoft_OLD():
 
 @app.route('/api/producao')
 def get_producao():
