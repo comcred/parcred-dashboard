@@ -17,126 +17,154 @@ STATUS_LIST = ['FILA','CONSULTA DE DADOS','CONSULTA TÉCNICA PROCESSADORA','JUR�
 ETAPAS_ALERTA = ['FILA','CONSULTA DE DADOS','CONSULTA TÉCNICA PROCESSADORA','JURÍDICO','COMITÊ EXECUTIVO','PENDÊNCIA COMITÊ','CREDENCIAMENTO','DOCS ENVIADOS','DOCS EM ANÁLISE','ASSINATURA','RUBRICA','CONTRATO PROCESSADORA']
 DIAS_ALERTA = 15
 
-import subprocess
+import requests as req_lib
 import threading
 import csv
 import io
-from datetime import datetime, timedelta
 
-# Cache for banksoft data
 _banksoft_cache = {'data': None, 'updated': None}
-_banksoft_lock = threading.Lock()
+_banksoft_lock  = threading.Lock()
 
-def instalar_playwright():
-    """Instala browsers do playwright se necessário"""
-    try:
-        subprocess.run(['playwright', 'install', 'chromium', '--with-deps'], 
-                      capture_output=True, timeout=120)
-    except: pass
+BANKSOFT_BASE = 'https://parcred.banksofttecnologia.com.br/AppConsig'
 
 def buscar_producao_banksoft():
-    """Acessa o sistema Banksoft e baixa o relatório de produção"""
     try:
-        from playwright.sync_api import sync_playwright
-        
         usuario = os.environ.get('BANKSOFT_USER', '')
         senha   = os.environ.get('BANKSOFT_PASS', '')
-        
         if not usuario or not senha:
-            return {'error': 'Credenciais não configuradas'}
+            return {'error': 'Credenciais não configuradas no Render'}
+
+        hoje   = datetime.now(BR_TZ)
+        dt_ini = '01/05/2026'
+        dt_fim = hoje.strftime('%d/%m/%Y')
+
+        session = req_lib.Session()
+        session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        })
+
+        # GET login page to get tokens/cookies
+        r = session.get(f'{BANKSOFT_BASE}/Login/ICLogin', timeout=30)
         
-        # Data de início: 01/05/2026, fim: hoje
-        hoje     = datetime.now(BR_TZ)
-        dt_ini   = '01/05/2026'
-        dt_fim   = hoje.strftime('%d/%m/%Y')
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(r.text, 'lxml')
         
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=['--no-sandbox','--disable-dev-shm-usage'])
-            page    = browser.new_page()
-            
-            # Login
-            page.goto('https://parcred.banksofttecnologia.com.br/AppConsig/Login/ICLogin?ReturnUrl=%2FAppConsig%2FPages%2FMenu%2FICMenu', timeout=30000)
-            page.wait_for_load_state('networkidle')
-            
-            # Preenche usuário e senha
-            page.fill('input[name*="usu"], input[id*="usu"], input[type="text"]', usuario)
-            page.fill('input[name*="sen"], input[id*="sen"], input[type="password"]', senha)
-            page.click('button[type="submit"], input[type="submit"]')
-            page.wait_for_load_state('networkidle')
-            
-            # Navega para Frente de Empréstimo
-            page.wait_for_timeout(2000)
-            
-            # Clica em Relatórios
-            page.click('text=Relatórios', timeout=10000)
-            page.wait_for_timeout(1000)
-            
-            # Clica em Produção Analítico
-            page.click('text=Produção Analítico', timeout=10000)
-            page.wait_for_load_state('networkidle')
-            page.wait_for_timeout(2000)
-            
-            # Preenche período
-            campos_data = page.query_selector_all('input[type="text"]')
-            # Tenta preencher datas
-            for campo in campos_data:
-                placeholder = campo.get_attribute('placeholder') or ''
-                if 'ini' in placeholder.lower() or 'início' in placeholder.lower() or 'de' in placeholder.lower():
-                    campo.fill(dt_ini)
-                elif 'fim' in placeholder.lower() or 'até' in placeholder.lower():
-                    campo.fill(dt_fim)
-            
-            # Situação = Integrado
+        # Get hidden fields (CSRF tokens etc)
+        form_data = {}
+        for inp in soup.find_all('input', type='hidden'):
+            if inp.get('name'):
+                form_data[inp['name']] = inp.get('value', '')
+        
+        # Find username/password field names
+        user_field = 'login'
+        pass_field = 'senha'
+        for inp in soup.find_all('input'):
+            name = (inp.get('name') or '').lower()
+            itype = (inp.get('type') or '').lower()
+            if itype == 'text' or 'usu' in name or 'login' in name or 'user' in name:
+                user_field = inp.get('name', user_field)
+            if itype == 'password' or 'sen' in name or 'pass' in name:
+                pass_field = inp.get('name', pass_field)
+        
+        form_data[user_field] = usuario
+        form_data[pass_field] = senha
+
+        # POST login
+        r2 = session.post(f'{BANKSOFT_BASE}/Login/ICLogin', data=form_data, 
+                         allow_redirects=True, timeout=30)
+        
+        if 'login' in r2.url.lower() or r2.status_code != 200:
+            return {'error': f'Login falhou. Status: {r2.status_code}'}
+
+        # Get report page
+        r3 = session.get(f'{BANKSOFT_BASE}/Pages/Relatorio/ICRelatorioProducaoAnalitico', 
+                        timeout=30)
+        if r3.status_code != 200:
+            # Try to find report URL from menu
+            soup2 = BeautifulSoup(r2.text, 'lxml')
+            links = soup2.find_all('a', href=True)
+            report_url = None
+            for link in links:
+                href = link.get('href','').lower()
+                text = link.get_text().lower()
+                if 'producao' in href or 'producao' in text or 'analitico' in href:
+                    report_url = link['href']
+                    break
+            if report_url:
+                if not report_url.startswith('http'):
+                    report_url = BANKSOFT_BASE + '/' + report_url.lstrip('/')
+                r3 = session.get(report_url, timeout=30)
+
+        soup3 = BeautifulSoup(r3.text, 'lxml')
+        
+        # Find form and fill dates + situacao
+        form3 = {}
+        for inp in soup3.find_all('input'):
+            if inp.get('name'):
+                form3[inp['name']] = inp.get('value','')
+        
+        # Set period and situacao
+        for inp in soup3.find_all('input', type='text'):
+            name = (inp.get('name') or '').lower()
+            placeholder = (inp.get('placeholder') or '').lower()
+            if 'ini' in name or 'inicio' in name or 'de' == name or 'ini' in placeholder:
+                form3[inp['name']] = dt_ini
+            elif 'fim' in name or 'ate' in name or 'fim' in placeholder:
+                form3[inp['name']] = dt_fim
+        
+        # Find situacao select
+        for sel in soup3.find_all('select'):
+            name = (sel.get('name') or '').lower()
+            if 'sit' in name or 'status' in name or 'situac' in name:
+                form3[sel['name']] = 'INT'
+
+        # Submit and get CSV
+        export_url = r3.url
+        r4 = session.post(export_url, data={**form3, 'exportar': 'csv', 'formato': 'csv'}, 
+                         timeout=60)
+        
+        # Check if response is CSV
+        content_type = r4.headers.get('Content-Type', '')
+        if 'csv' in content_type or 'text' in content_type or len(r4.content) > 1000:
             try:
-                page.select_option('select', 'INT')
-            except:
-                try:
-                    page.click('text=Integrado')
-                except: pass
-            
-            # Exportar CSV
-            with page.expect_download(timeout=30000) as download_info:
-                page.click('text=Exportar, text=CSV, text=Export', timeout=10000)
-            
-            download  = download_info.value
-            csv_bytes = download.read_bytes()
-            browser.close()
-            
-            # Processa CSV
-            text = csv_bytes.decode('utf-8-sig')
-            reader = csv.DictReader(io.StringIO(text), delimiter=';')
-            rows = list(reader)
-            
-            return {'rows': rows, 'total': len(rows), 'atualizado': hoje.strftime('%d/%m/%Y %H:%M')}
-    
+                text = r4.content.decode('utf-8-sig')
+                reader = csv.DictReader(io.StringIO(text), delimiter=';')
+                rows = [dict(r) for r in reader]
+                if rows and len(rows[0]) > 3:
+                    return {
+                        'rows': rows, 
+                        'total': len(rows),
+                        'periodo': f'{dt_ini} a {dt_fim}',
+                        'atualizado': hoje.strftime('%d/%m/%Y %H:%M')
+                    }
+            except: pass
+        
+        return {'error': 'Não foi possível baixar o CSV. O sistema pode ter mudado o layout.', 
+                'debug_url': r3.url, 'debug_status': r4.status_code}
+
     except Exception as e:
-        return {'error': f'Erro ao acessar sistema: {str(e)}'}
+        return {'error': str(e)}
 
 @app.route('/api/producao')
 def get_producao():
-    """Retorna dados de produção do Banksoft com cache de 1 hora"""
-    global _banksoft_cache
-    
-    forcar = request.args.get('forcar', 'false') == 'true'
-    
+    forcar = request.args.get('forcar','false') == 'true'
     with _banksoft_lock:
         agora = datetime.now(BR_TZ)
-        cache_valido = (
+        cache_ok = (
             _banksoft_cache['data'] is not None and
             _banksoft_cache['updated'] is not None and
             (agora - _banksoft_cache['updated']).seconds < 3600 and
             not forcar
         )
-        
-        if cache_valido:
+        if cache_ok:
             return jsonify({**_banksoft_cache['data'], 'cache': True})
-        
         resultado = buscar_producao_banksoft()
-        
         if 'error' not in resultado:
-            _banksoft_cache = {'data': resultado, 'updated': agora}
-        
+            _banksoft_cache['data']    = resultado
+            _banksoft_cache['updated'] = agora
         return jsonify({**resultado, 'cache': False})
+
 
 def get_client():
     creds_dict = json.loads(os.environ.get('GOOGLE_CREDS','{}'))
