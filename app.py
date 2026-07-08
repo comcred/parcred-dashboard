@@ -221,8 +221,6 @@ def buscar_producao_banksoft():
         import traceback
         return {'error': str(e), 'traceback': traceback.format_exc()[-500:]}
 
-def _buscar_producao_banksoft_OLD():
-
 @app.route('/api/producao')
 def get_producao():
     forcar = request.args.get('forcar','false') == 'true'
