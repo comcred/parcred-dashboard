@@ -74,8 +74,30 @@ def buscar_producao_banksoft():
         r2 = session.post(f'{BANKSOFT_BASE}/Login/ICLogin', data=form_data, 
                          allow_redirects=True, timeout=30)
         
-        if 'login' in r2.url.lower() or r2.status_code != 200:
-            return {'error': f'Login falhou. Status: {r2.status_code}'}
+        # Debug: capture login response info
+        login_debug = {
+            'url_after_login': r2.url,
+            'status': r2.status_code,
+            'has_menu': 'menu' in r2.url.lower() or 'home' in r2.url.lower(),
+            'page_title': '',
+            'form_fields_found': list(form_data.keys()),
+            'user_field_used': user_field,
+            'pass_field_used': pass_field,
+        }
+        try:
+            soup_debug = BeautifulSoup(r2.text, 'lxml')
+            title = soup_debug.find('title')
+            login_debug['page_title'] = title.get_text() if title else ''
+            # Check if still on login page
+            login_inputs = soup_debug.find_all('input', type='password')
+            login_debug['still_on_login'] = len(login_inputs) > 0
+            # Get all links from page
+            links = [a.get('href','') for a in soup_debug.find_all('a', href=True)][:10]
+            login_debug['links'] = links
+        except: pass
+        
+        if login_debug.get('still_on_login') or 'login' in r2.url.lower():
+            return {'error': f'Login falhou', 'debug': login_debug}
 
         # Get report page
         r3 = session.get(f'{BANKSOFT_BASE}/Pages/Relatorio/ICRelatorioProducaoAnalitico', 
