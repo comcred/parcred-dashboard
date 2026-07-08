@@ -1878,7 +1878,7 @@ function loadOnboarding() {
         </tr>`;
       }).join('');
     })
-    .catch(() => document.getElementById('onb-tbody').innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:#991b1b">Erro ao carregar.</td></tr>');
+    .catch(() => { const _ot=document.getElementById('onb-tbody'); if(_ot) _ot.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:#991b1b">Erro ao carregar.</td></tr>'; });
 }
 
 function populateOnbSelect() {
@@ -2006,7 +2006,7 @@ function loadGiro() {
           ${r.proxPassos ? `<div class="giro-field full"><div class="l">Próximos Passos</div><div class="v">${r.proxPassos}</div></div>` : ''}
         </div>
       </div>`).join('');
-  }).catch(() => const _gl=document.getElementById('giro-list'); if(_gl) _gl.innerHTML = '<div class="giro-empty" style="color:#991b1b">Erro ao carregar reuniões.</div>');
+  }).catch(() => { const _gl=document.getElementById('giro-list'); if(_gl) _gl.innerHTML = '<div class="giro-empty" style="color:#991b1b">Erro ao carregar reuniões.</div>'; });
 }
 
 function abrirGiroModal() {
