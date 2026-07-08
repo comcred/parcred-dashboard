@@ -123,38 +123,38 @@ def buscar_producao_banksoft():
             }}
 
         # Login OK! Now navigate to report
-        # Find Relatórios menu link
-        relat_url = None
-        for a in soup2.find_all('a', href=True):
-            txt  = a.get_text(strip=True).lower()
-            href = a.get('href','').lower()
-            if 'relat' in txt or 'relat' in href:
-                relat_url = a['href']
-                if not relat_url.startswith('http'):
-                    relat_url = 'https://parcred.banksofttecnologia.com.br' + relat_url
-                break
-
-        if not relat_url:
-            return {'error': 'Login OK mas menu Relatórios não encontrado', 'debug': {'page_title': page_title, 'url': r2.url}}
-
-        r3 = session.get(relat_url, timeout=30)
-        soup3 = BeautifulSoup(r3.text, 'lxml')
-
-        # Find Produção Analítico
+        BASE = 'https://parcred.banksofttecnologia.com.br/AppConsig'
+        
+        # Try direct URL for Produção Analítico report
+        PROD_CANDIDATES = [
+            f'{BASE}/Pages/Relatorio/ICRelatorioProducaoAnalitico',
+            f'{BASE}/Pages/Relatorios/ICRelatorioProducaoAnalitico',
+            f'{BASE}/Pages/Relatorio/ICProducaoAnalitico',
+            f'{BASE}/Pages/Relatorios/ICProducaoAnalitico',
+            f'{BASE}/Pages/Relatorio/ICRelatorioProducao',
+        ]
+        
         prod_url = None
-        for a in soup3.find_all('a', href=True):
-            txt = a.get_text(strip=True).lower()
-            if 'producao' in txt or 'produção' in txt or 'analitico' in txt or 'analítico' in txt:
-                prod_url = a['href']
-                if not prod_url.startswith('http'):
-                    prod_url = 'https://parcred.banksofttecnologia.com.br' + prod_url
-                break
-
+        r4 = None
+        for candidate in PROD_CANDIDATES:
+            rc = session.get(candidate, timeout=20)
+            if rc.status_code == 200 and 'login' not in rc.url.lower():
+                soup_c = BeautifulSoup(rc.text, 'lxml')
+                # Check if it has date inputs (report page)
+                inputs = soup_c.find_all('input', type='text')
+                if len(inputs) >= 2:
+                    prod_url = candidate
+                    r4 = rc
+                    soup4 = soup_c
+                    break
+        
         if not prod_url:
-            return {'error': 'Relatório de Produção não encontrado', 'debug': {'relat_url': relat_url}}
-
-        r4 = session.get(prod_url, timeout=30)
-        soup4 = BeautifulSoup(r4.text, 'lxml')
+            # Get all links from post-login page to debug
+            all_links = [(a.get_text(strip=True), a.get('href','')) 
+                        for a in soup2.find_all('a', href=True)][:30]
+            return {'error': 'Login OK mas menu Relatórios não encontrado', 
+                    'debug': {'page_title': page_title, 'url': r2.url, 
+                             'links_found': all_links}}
 
         # Fill form
         form4 = {}
