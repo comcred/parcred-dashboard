@@ -217,12 +217,42 @@ def buscar_producao_banksoft():
             if rows:
                 return {'rows': rows, 'total': len(rows), 'periodo': f'{dt_ini} a {dt_fim}', 'atualizado': hoje.strftime('%d/%m/%Y %H:%M')}
 
+        # Debug: show all form fields and buttons on report page
+        form_fields = {}
+        for inp in soup4.find_all('input'):
+            nm = inp.get('name','')
+            tp = inp.get('type','')
+            vl = inp.get('value','')
+            if nm and tp not in ['hidden']:
+                form_fields[nm] = {'type': tp, 'value': vl[:50]}
+        
+        selects_found = {}
+        for sel in soup4.find_all('select'):
+            nm = sel.get('name','')
+            if nm:
+                opts = [o.get('value','') + '=' + o.get_text(strip=True) for o in sel.find_all('option')]
+                selects_found[nm] = opts
+        
+        buttons_found = []
+        for inp in soup4.find_all(['input','button','a']):
+            tp = inp.get('type','')
+            href = inp.get('href','')
+            nm = inp.get('name','')
+            vl = inp.get('value','')
+            txt = inp.get_text(strip=True)
+            if tp in ['submit','button'] or ('doPostBack' in href) or ('csv' in txt.lower()) or ('export' in txt.lower()) or ('csv' in vl.lower()):
+                buttons_found.append({'tag': inp.name, 'type': tp, 'name': nm, 'value': vl, 'text': txt, 'href': href[:100]})
+        
         return {'error': 'CSV não retornado', 'debug': {
             'content_type': content_type,
             'status': r5.status_code,
-            'response_preview': r5.text[:500],
+            'response_preview': r5.text[:300],
             'prod_url': prod_url,
-            'export_target': export_target
+            'export_target': export_target,
+            'form_fields': form_fields,
+            'selects': selects_found,
+            'buttons': buttons_found,
+            'form4_keys': [k for k in form4.keys() if not k.startswith('__')]
         }}
 
     except Exception as e:
