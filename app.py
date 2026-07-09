@@ -125,36 +125,49 @@ def buscar_producao_banksoft():
         # Login OK! Now navigate to report
         BASE = 'https://parcred.banksofttecnologia.com.br/AppConsig'
         
-        # Try direct URL for Produção Analítico report
+        # After login try to access report directly
+        # First: navigate to menu to get session cookies validated
+        session.get(f'{BASE}/Pages/Menu/ICMenu', timeout=20)
+        
+        # Try all possible report URLs
         PROD_CANDIDATES = [
             f'{BASE}/Pages/Relatorio/ICRelatorioProducaoAnalitico',
-            f'{BASE}/Pages/Relatorios/ICRelatorioProducaoAnalitico',
+            f'{BASE}/Pages/Relatorios/ICRelatorioProducaoAnalitico', 
             f'{BASE}/Pages/Relatorio/ICProducaoAnalitico',
             f'{BASE}/Pages/Relatorios/ICProducaoAnalitico',
             f'{BASE}/Pages/Relatorio/ICRelatorioProducao',
+            f'{BASE}/Pages/Relatorio/ICRelatorioProducaoAnaliticoEmprestimo',
+            f'{BASE}/Pages/Relatorios/ICRelatorioProducaoAnaliticoEmprestimo',
+            f'{BASE}/Pages/EmprestimoConsignado/Relatorio/ICRelatorioProducaoAnalitico',
+            f'{BASE}/Pages/EmprestimoConsignado/ICRelatorioProducaoAnalitico',
         ]
         
         prod_url = None
-        r4 = None
+        soup4 = None
         for candidate in PROD_CANDIDATES:
             rc = session.get(candidate, timeout=20)
             if rc.status_code == 200 and 'login' not in rc.url.lower():
                 soup_c = BeautifulSoup(rc.text, 'lxml')
-                # Check if it has date inputs (report page)
                 inputs = soup_c.find_all('input', type='text')
-                if len(inputs) >= 2:
-                    prod_url = candidate
-                    r4 = rc
+                selects = soup_c.find_all('select')
+                title = (soup_c.find('title') or soup_c.new_tag('x')).get_text(strip=True)
+                if len(inputs) >= 1 or len(selects) >= 1:
+                    prod_url = rc.url
                     soup4 = soup_c
                     break
         
         if not prod_url:
-            # Get all links from post-login page to debug
-            all_links = [(a.get_text(strip=True), a.get('href','')) 
-                        for a in soup2.find_all('a', href=True)][:30]
-            return {'error': 'Login OK mas menu Relatórios não encontrado', 
-                    'debug': {'page_title': page_title, 'url': r2.url, 
-                             'links_found': all_links}}
+            # Debug: show what pages are accessible
+            debug_pages = {}
+            for candidate in PROD_CANDIDATES[:3]:
+                rc = session.get(candidate, timeout=10)
+                debug_pages[candidate.split('/')[-1]] = {
+                    'status': rc.status_code,
+                    'url': rc.url,
+                    'title': BeautifulSoup(rc.text,'lxml').find('title') and BeautifulSoup(rc.text,'lxml').find('title').get_text(strip=True)
+                }
+            return {'error': 'Página de relatório não encontrada', 
+                    'debug': {'post_login_url': r2.url, 'pages_tried': debug_pages}}
 
         # Fill form
         form4 = {}
