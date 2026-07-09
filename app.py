@@ -1,3 +1,4 @@
+from bs4 import BeautifulSoup
 from flask import Flask, jsonify, request, send_from_directory, make_response
 from flask_cors import CORS
 import gspread
@@ -29,258 +30,85 @@ BANKSOFT_BASE = 'https://parcred.banksofttecnologia.com.br/AppConsig'
 
 def buscar_producao_banksoft():
     try:
+        from playwright.sync_api import sync_playwright
+        
         usuario = os.environ.get('BANKSOFT_USER', '')
         senha   = os.environ.get('BANKSOFT_PASS', '')
         if not usuario or not senha:
-            return {'error': 'Credenciais não configuradas no Render'}
+            return {'error': 'Credenciais não configuradas'}
 
         hoje   = datetime.now(BR_TZ)
         dt_ini = '01/05/2026'
         dt_fim = hoje.strftime('%d/%m/%Y')
-
-        session = req_lib.Session()
-        session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-        })
-
-        # GET login page to capture VIEWSTATE and other hidden fields
-        r = session.get('https://parcred.banksofttecnologia.com.br/AppConsig/Login/ICLogin', timeout=30)
         
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(r.text, 'lxml')
-
-        # Capture ALL hidden fields
-        form_data = {}
-        for inp in soup.find_all('input'):
-            name = inp.get('name','')
-            if name:
-                form_data[name] = inp.get('value','')
-
-        # Set credentials with exact field names
-        form_data['txtUsuario$CAMPO'] = usuario
-        form_data['txtSenha$CAMPO']   = senha
-
-        # ASP.NET requires __EVENTTARGET for button clicks via PostBack
-        # Find the login button
-        btn = soup.find('input', type='submit') or soup.find('button', type='submit')
-        if btn and btn.get('name'):
-            form_data[btn['name']] = btn.get('value','Entrar')
-        else:
-            # Try to find link button or set EVENTTARGET
-            for a in soup.find_all('a', href=True):
-                href = a.get('href','')
-                if 'doPostBack' in href and ('login' in href.lower() or 'entr' in href.lower() or 'acesso' in href.lower()):
-                    import re
-                    m = re.search(r"__doPostBack\('([^']+)'", href)
-                    if m:
-                        form_data['__EVENTTARGET'] = m.group(1)
-                        form_data['__EVENTARGUMENT'] = ''
-
-        # POST login
-        session.headers.update({
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Referer': 'https://parcred.banksofttecnologia.com.br/AppConsig/Login/ICLogin',
-            'Origin': 'https://parcred.banksofttecnologia.com.br',
-        })
-
-        r2 = session.post(
-            'https://parcred.banksofttecnologia.com.br/AppConsig/Login/ICLogin',
-            data=form_data,
-            allow_redirects=True,
-            timeout=30
-        )
-
-        soup2 = BeautifulSoup(r2.text, 'lxml')
-        still_login = len(soup2.find_all('input', type='password')) > 0
-        page_title  = (soup2.find('title') or soup2.new_tag('x')).get_text(strip=True)
-
-        if still_login:
-            # Try with lnkAcessar or similar button
-            form_data['__EVENTTARGET'] = 'lnkAcessar'
-            form_data['__EVENTARGUMENT'] = ''
-            r2 = session.post(
-                'https://parcred.banksofttecnologia.com.br/AppConsig/Login/ICLogin',
-                data=form_data,
-                allow_redirects=True,
-                timeout=30
-            )
-            soup2 = BeautifulSoup(r2.text, 'lxml')
-            still_login = len(soup2.find_all('input', type='password')) > 0
-            page_title  = (soup2.find('title') or soup2.new_tag('x')).get_text(strip=True)
-
-        if still_login:
-            # Get all links/buttons to debug
-            btns = [str(b) for b in soup.find_all(['input','button','a']) if b.get('type') in ['submit','button'] or 'doPostBack' in str(b)]
-            return {'error': 'Login ainda falhou', 'debug': {
-                'page_title': page_title,
-                'url': r2.url,
-                'buttons_found': btns[:5],
-                'form_fields_sent': list(form_data.keys())
-            }}
-
-        # Login OK! Now navigate to report
         BASE = 'https://parcred.banksofttecnologia.com.br/AppConsig'
-        
-        # After login try to access report directly
-        # First: navigate to menu to get session cookies validated
-        session.get(f'{BASE}/Pages/Menu/ICMenu', timeout=20)
-        
-        # Try all possible report URLs
-        PROD_CANDIDATES = [
-            f'{BASE}/Pages/Relatorios/ICRLProducaoAnalitico',
-            f'{BASE}/Pages/Relatorio/ICRLProducaoAnalitico',
-            f'{BASE}/Pages/Relatorios/ICRelatorioProducaoAnalitico',
-            f'{BASE}/Pages/Relatorio/ICRelatorioProducaoAnalitico',
-        ]
-        
-        prod_url = None
-        soup4 = None
-        for candidate in PROD_CANDIDATES:
-            rc = session.get(candidate, timeout=20)
-            if rc.status_code == 200 and 'login' not in rc.url.lower():
-                soup_c = BeautifulSoup(rc.text, 'lxml')
-                inputs = soup_c.find_all('input', type='text')
-                selects = soup_c.find_all('select')
-                title = (soup_c.find('title') or soup_c.new_tag('x')).get_text(strip=True)
-                if len(inputs) >= 1 or len(selects) >= 1:
-                    prod_url = rc.url
-                    soup4 = soup_c
-                    break
-        
-        if not prod_url:
-            # Debug: show what pages are accessible
-            debug_pages = {}
-            for candidate in PROD_CANDIDATES[:3]:
-                rc = session.get(candidate, timeout=10)
-                debug_pages[candidate.split('/')[-1]] = {
-                    'status': rc.status_code,
-                    'url': rc.url,
-                    'title': BeautifulSoup(rc.text,'lxml').find('title') and BeautifulSoup(rc.text,'lxml').find('title').get_text(strip=True)
-                }
-            return {'error': 'Página de relatório não encontrada', 
-                    'debug': {'post_login_url': r2.url, 'pages_tried': debug_pages}}
 
-        # Fill form with ALL hidden fields first
-        form4 = {}
-        for inp in soup4.find_all('input'):
-            if inp.get('name'):
-                form4[inp['name']] = inp.get('value','')
-        for sel in soup4.find_all('select'):
-            if sel.get('name'):
-                # Default to first option
-                first = sel.find('option')
-                form4[sel['name']] = first.get('value','') if first else ''
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']
+            )
+            page = browser.new_page()
+            page.set_default_timeout(30000)
 
-        # Set exact field names discovered from debug
-        form4['ctl00$Cph$txtFaixaData$edit1$CAMPO'] = dt_ini
-        form4['ctl00$Cph$txtFaixaData$edit2$CAMPO'] = dt_fim
-        form4['ctl00$Cph$cbFaixaData$CAMPO']         = '00'  # Período customizado
-        form4['ctl00$Cph$rblTipoConsulta']            = 'Digitação'
-        
-        # Check only "Integrado" status
-        for chk in ['chkStatusSimulacao','chkStatusCadastro','chkStatusAndamento',
-                    'chkStatusPendente','chkStatusAprovado','chkStatusLiberado',
-                    'chkStatusReprovado']:
-            form4[f'ctl00$Cph${chk}'] = ''
-        form4['ctl00$Cph$chkStatusIntegrado'] = 'on'
-        
-        # Origem = TODOS
-        form4['ctl00$Cph$cbOrigens$CAMPO'] = '000000'
+            # Login
+            page.goto(f'{BASE}/Login/ICLogin', wait_until='networkidle')
+            page.fill('input[name="txtUsuario$CAMPO"]', usuario)
+            page.fill('input[name="txtSenha$CAMPO"]', senha)
+            page.click('a:has-text("Acessar"), input[type="submit"], button[type="submit"]')
+            page.wait_for_load_state('networkidle')
 
-        # Export CSV - try different PostBack approaches
-        session.headers.update({
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Referer': prod_url,
-            'X-Requested-With': '',
-        })
-        
-        # First: try clicking Pesquisar to load results
-        form_pesq = dict(form4)
-        # Find pesquisar button
-        for inp in soup4.find_all('input', type='submit'):
-            val = (inp.get('value') or '').lower()
-            nm  = (inp.get('name') or '')
-            if 'pesq' in val or 'buscar' in val or 'filtrar' in val or 'consultar' in val:
-                form_pesq[nm] = inp.get('value','')
-                break
-        else:
-            # Try PostBack with bbPesquisar
-            form_pesq['__EVENTTARGET'] = 'ctl00$Cph$bbPesquisar'
-            form_pesq['__EVENTARGUMENT'] = ''
-        
-        r_pesq = session.post(prod_url, data=form_pesq, allow_redirects=True, timeout=60)
-        soup_pesq = BeautifulSoup(r_pesq.text, 'lxml')
-        
-        # Now export CSV from results page
-        form5 = {}
-        for inp in soup_pesq.find_all('input'):
-            if inp.get('name'):
-                form5[inp['name']] = inp.get('value','')
-        for sel in soup_pesq.find_all('select'):
-            if sel.get('name'):
-                opt = sel.find('option', selected=True) or sel.find('option')
-                form5[sel['name']] = opt.get('value','') if opt else ''
-        
-        form5['__EVENTTARGET']   = 'ctl00$Cph$bbExportarCSV'
-        form5['__EVENTARGUMENT'] = ''
-        
-        r5 = session.post(r_pesq.url, data=form5, allow_redirects=True, timeout=60)
-        export_target = 'ctl00$Cph$bbExportarCSV'
+            # Navigate to report
+            page.goto(f'{BASE}/Pages/Relatorios/ICRLProducaoAnalitico', wait_until='networkidle')
+            page.wait_for_timeout(2000)
 
-        # Parse CSV
-        content_type = r5.headers.get('Content-Type','')
-        if 'csv' in content_type or 'octet' in content_type or ('text' in content_type and ';' in r5.text[:500]):
-            text   = r5.content.decode('utf-8-sig', errors='replace')
+            # Fill dates
+            page.fill('input[name="ctl00$Cph$txtFaixaData$edit1$CAMPO"]', dt_ini)
+            page.fill('input[name="ctl00$Cph$txtFaixaData$edit2$CAMPO"]', dt_fim)
+
+            # Uncheck all status checkboxes then check only Integrado
+            for chk in ['chkStatusSimulacao','chkStatusCadastro','chkStatusAndamento',
+                        'chkStatusPendente','chkStatusAprovado','chkStatusLiberado','chkStatusReprovado']:
+                try:
+                    cb = page.locator(f'input[name="ctl00$Cph${chk}"]')
+                    if cb.is_checked():
+                        cb.uncheck()
+                except: pass
+            
+            try:
+                cb_int = page.locator('input[name="ctl00$Cph$chkStatusIntegrado"]')
+                if not cb_int.is_checked():
+                    cb_int.check()
+            except: pass
+
+            # Download CSV
+            with page.expect_download(timeout=60000) as dl:
+                page.click('a:has-text("Exportar CSV")')
+            
+            download = dl.value
+            csv_bytes = download.read_bytes()
+            browser.close()
+
+            # Parse CSV
+            import csv, io
+            text   = csv_bytes.decode('utf-8-sig', errors='replace')
             reader = csv.DictReader(io.StringIO(text), delimiter=';')
-            rows   = [dict(row) for row in reader]
-            if rows:
-                return {'rows': rows, 'total': len(rows), 'periodo': f'{dt_ini} a {dt_fim}', 'atualizado': hoje.strftime('%d/%m/%Y %H:%M')}
+            rows   = [dict(r) for r in reader]
+            
+            if not rows or len(rows[0]) < 3:
+                return {'error': 'CSV vazio ou inválido', 'preview': text[:200]}
 
-        # Debug: show all form fields and buttons on report page
-        form_fields = {}
-        for inp in soup4.find_all('input'):
-            nm = inp.get('name','')
-            tp = inp.get('type','')
-            vl = inp.get('value','')
-            if nm and tp not in ['hidden']:
-                form_fields[nm] = {'type': tp, 'value': vl[:50]}
-        
-        selects_found = {}
-        for sel in soup4.find_all('select'):
-            nm = sel.get('name','')
-            if nm:
-                opts = [o.get('value','') + '=' + o.get_text(strip=True) for o in sel.find_all('option')]
-                selects_found[nm] = opts
-        
-        buttons_found = []
-        for inp in soup4.find_all(['input','button','a']):
-            tp = inp.get('type','')
-            href = inp.get('href','')
-            nm = inp.get('name','')
-            vl = inp.get('value','')
-            txt = inp.get_text(strip=True)
-            if tp in ['submit','button'] or ('doPostBack' in href) or ('csv' in txt.lower()) or ('export' in txt.lower()) or ('csv' in vl.lower()):
-                buttons_found.append({'tag': inp.name, 'type': tp, 'name': nm, 'value': vl, 'text': txt, 'href': href[:100]})
-        
-        return {'error': 'CSV não retornado', 'debug': {
-            'content_type': content_type,
-            'status': r5.status_code,
-            'response_preview': r5.text[:300],
-            'prod_url': prod_url,
-            'export_target': export_target,
-            'form_fields': form_fields,
-            'selects': selects_found,
-            'buttons': buttons_found,
-            'form4_keys': [k for k in form4.keys() if not k.startswith('__')]
-        }}
+            return {
+                'rows': rows,
+                'total': len(rows),
+                'periodo': f'{dt_ini} a {dt_fim}',
+                'atualizado': hoje.strftime('%d/%m/%Y %H:%M')
+            }
 
     except Exception as e:
         import traceback
-        return {'error': str(e), 'traceback': traceback.format_exc()[-500:]}
+        return {'error': str(e), 'traceback': traceback.format_exc()[-800:]}
+
 
 @app.route('/api/producao')
 def get_producao():
