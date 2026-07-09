@@ -164,48 +164,42 @@ def buscar_producao_banksoft():
             return {'error': 'Página de relatório não encontrada', 
                     'debug': {'post_login_url': r2.url, 'pages_tried': debug_pages}}
 
-        # Fill form
+        # Fill form with ALL hidden fields first
         form4 = {}
         for inp in soup4.find_all('input'):
             if inp.get('name'):
                 form4[inp['name']] = inp.get('value','')
-
-        # Fill dates
-        for inp in soup4.find_all('input', type='text'):
-            name = (inp.get('name') or '').lower()
-            ph   = (inp.get('placeholder') or '').lower()
-            if any(x in name+ph for x in ['ini','inicio','início','de','from']):
-                form4[inp['name']] = dt_ini
-            elif any(x in name+ph for x in ['fim','até','ate','to','end']):
-                form4[inp['name']] = dt_fim
-
-        # Situação = Integrado
         for sel in soup4.find_all('select'):
-            name = (sel.get('name') or '').lower()
-            if any(x in name for x in ['sit','status','situac']):
-                form4[sel['name']] = 'INT'
+            if sel.get('name'):
+                # Default to first option
+                first = sel.find('option')
+                form4[sel['name']] = first.get('value','') if first else ''
 
-        # Find export/CSV button
-        export_target = ''
-        for inp in soup4.find_all('input'):
-            val = (inp.get('value') or '').lower()
-            nm  = (inp.get('name') or '').lower()
-            if 'csv' in val or 'export' in val or 'csv' in nm:
-                export_target = inp.get('name','')
-                form4[inp['name']] = inp.get('value','')
-                break
+        # Set exact field names discovered from debug
+        form4['ctl00$Cph$txtFaixaData$edit1$CAMPO'] = dt_ini
+        form4['ctl00$Cph$txtFaixaData$edit2$CAMPO'] = dt_fim
+        form4['ctl00$Cph$cbFaixaData$CAMPO']         = '00'  # Período customizado
+        form4['ctl00$Cph$rblTipoConsulta']            = 'Digitação'
+        
+        # Check only "Integrado" status
+        for chk in ['chkStatusSimulacao','chkStatusCadastro','chkStatusAndamento',
+                    'chkStatusPendente','chkStatusAprovado','chkStatusLiberado',
+                    'chkStatusReprovado']:
+            form4[f'ctl00$Cph${chk}'] = ''
+        form4['ctl00$Cph$chkStatusIntegrado'] = 'on'
+        
+        # Origem = TODOS
+        form4['ctl00$Cph$cbOrigens$CAMPO'] = '000000'
 
-        if not export_target:
-            for a in soup4.find_all('a', href=True):
-                if 'doPostBack' in a.get('href','') and ('csv' in a.get_text().lower() or 'export' in a.get('href','').lower()):
-                    import re
-                    m = re.search(r"__doPostBack\('([^']+)'", a['href'])
-                    if m:
-                        form4['__EVENTTARGET'] = m.group(1)
-                        form4['__EVENTARGUMENT'] = ''
-                        export_target = m.group(1)
-                        break
+        # Export CSV via PostBack
+        form4['__EVENTTARGET']   = 'ctl00$Cph$bbExportarCSV'
+        form4['__EVENTARGUMENT'] = ''
+        export_target = 'ctl00$Cph$bbExportarCSV'
 
+        session.headers.update({
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Referer': prod_url,
+        })
         r5 = session.post(prod_url, data=form4, allow_redirects=True, timeout=60)
 
         # Parse CSV
