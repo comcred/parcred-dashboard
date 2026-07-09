@@ -1,3 +1,9 @@
+import subprocess
+try:
+    subprocess.run(['python', '-m', 'playwright', 'install', 'chromium'], 
+                  capture_output=True, timeout=120)
+except: pass
+
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify, request, send_from_directory, make_response
 from flask_cors import CORS
