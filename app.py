@@ -58,15 +58,18 @@ def buscar_producao_banksoft():
             page.set_default_timeout(30000)
 
             # Login
-            page.goto(f'{BASE}/Login/ICLogin', wait_until='networkidle')
+            page.set_default_timeout(60000)
+            page.goto(f'{BASE}/Login/ICLogin', wait_until='domcontentloaded', timeout=60000)
+            page.wait_for_timeout(2000)
             page.fill('input[name="txtUsuario$CAMPO"]', usuario)
             page.fill('input[name="txtSenha$CAMPO"]', senha)
             page.click('a:has-text("Acessar"), input[type="submit"], button[type="submit"]')
-            page.wait_for_load_state('networkidle')
+            page.wait_for_load_state('domcontentloaded', timeout=60000)
+            page.wait_for_timeout(3000)
 
             # Navigate to report
-            page.goto(f'{BASE}/Pages/Relatorios/ICRLProducaoAnalitico', wait_until='networkidle')
-            page.wait_for_timeout(2000)
+            page.goto(f'{BASE}/Pages/Relatorios/ICRLProducaoAnalitico', wait_until='domcontentloaded', timeout=60000)
+            page.wait_for_timeout(3000)
 
             # Fill dates
             page.fill('input[name="ctl00$Cph$txtFaixaData$edit1$CAMPO"]', dt_ini)
