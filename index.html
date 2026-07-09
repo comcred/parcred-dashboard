@@ -662,15 +662,9 @@ tbody td{padding:9px 14px;vertical-align:middle}
 
     <div class="prod-upload-area" id="prod-upload-area">
       <div class="prod-upload-box" id="prod-upload-box">
-        <div class="prod-upload-icon">📂</div>
-        <div class="prod-upload-title">Carregar Relatório de Produção</div>
-        <div class="prod-upload-sub">Arraste o CSV ou clique para selecionar</div>
-        <input type="file" id="prod-file-input" accept=".csv" style="display:none" onchange="handleCSV(this)">
-        <button class="prod-upload-btn" onclick="document.getElementById('prod-file-input').click()">Selecionar arquivo CSV</button>
-      </div>
-      <div class="prod-upload-info" id="prod-upload-info" style="display:none">
-        <span id="prod-file-name"></span>
-        <button onclick="clearProducao()" style="background:none;border:none;cursor:pointer;color:#991b1b;font-size:12px;font-weight:700">✕ Remover</button>
+        <div class="prod-upload-icon">⏳</div>
+        <div class="prod-upload-title">Carregando produção do Banksoft...</div>
+        <div class="prod-upload-sub">Isso pode levar alguns segundos</div>
       </div>
     </div>
 
@@ -1456,8 +1450,8 @@ const prodDDLabels = {'pf-corban': 'Corban', 'pf-convenio': 'Convênio'};
 function handleCSV(input) {
   const file = input.files[0];
   if (!file) return;
-  document.getElementById('prod-file-name').textContent = file.name;
-  document.getElementById('prod-upload-info').style.display = 'flex';
+  const fn = document.getElementById('prod-file-name'); if (fn) fn.textContent = file.name;
+  const pi = document.getElementById('prod-upload-info'); if (pi) pi.style.display = 'flex';
   Papa.parse(file, {
     header: true,
     skipEmptyLines: true,
@@ -1527,11 +1521,78 @@ function processProducaoData(rows) {
 function clearProducao() {
   prodData = [];
   document.getElementById('prod-content').style.display = 'none';
-  document.getElementById('prod-upload-info').style.display = 'none';
-  document.getElementById('prod-file-input').value = '';
+  const pi = document.getElementById('prod-upload-info'); if (pi) pi.style.display = 'none';
+  const fi = document.getElementById('prod-file-input'); if (fi) fi.value = '';
   Object.values(prodCharts).forEach(c => { try { c.destroy(); } catch(e) {} });
   prodCharts = {};
   Object.keys(prodDDState).forEach(k => prodDDState[k].clear());
+}
+
+// ── Carregamento automático via Banksoft ────────────────────────────
+let banksoftPollTimer = null;
+
+function initProducaoBanksoft() {
+  if (prodData.length > 0) return; // já carregado nesta sessão
+  fetchProducaoStatus();
+}
+
+function fetchProducaoStatus() {
+  fetch('/api/producao/status')
+    .then(r => r.json())
+    .then(d => {
+      if (d.status === 'done' && d.rows && d.rows.length) {
+        processProducaoData(d.rows);
+        renderProdBanksoftInfo(d);
+      } else if (d.status === 'processing') {
+        renderProdLoading('Buscando produção mais recente no Banksoft...');
+        banksoftPollTimer = setTimeout(fetchProducaoStatus, 5000);
+      } else {
+        renderProdFallback(d);
+      }
+    })
+    .catch(e => renderProdFallback({error: e.message}));
+}
+
+function renderProdLoading(msg) {
+  const el = document.getElementById('prod-upload-area');
+  if (!el) return;
+  el.innerHTML = `<div class="prod-upload-box"><div class="prod-upload-icon">⏳</div><div class="prod-upload-title">${msg}</div><div class="prod-upload-sub">Isso pode levar alguns minutos</div></div>`;
+}
+
+function renderProdBanksoftInfo(d) {
+  const el = document.getElementById('prod-upload-area');
+  if (!el) return;
+  el.innerHTML = `<div class="prod-upload-info" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+    <span>✓ Produção carregada do Banksoft — atualizado em ${d.atualizado} · ${d.total} propostas · período ${d.periodo}</span>
+    <div style="display:flex;gap:8px">
+      <button onclick="forcarAtualizacaoBanksoft()" style="background:none;border:1px solid var(--bd);border-radius:6px;padding:6px 10px;cursor:pointer;font-size:12px;font-weight:700">🔄 Atualizar</button>
+      <input type="file" id="prod-file-input" accept=".csv" style="display:none" onchange="handleCSV(this)">
+      <button onclick="document.getElementById('prod-file-input').click()" style="background:none;border:1px solid var(--bd);border-radius:6px;padding:6px 10px;cursor:pointer;font-size:12px;font-weight:700">📂 Usar CSV</button>
+    </div>
+  </div>`;
+}
+
+function renderProdFallback(d) {
+  const el = document.getElementById('prod-upload-area');
+  if (!el) return;
+  el.innerHTML = `<div class="prod-upload-box">
+    <div class="prod-upload-icon">⚠️</div>
+    <div class="prod-upload-title">Não foi possível carregar do Banksoft</div>
+    <div class="prod-upload-sub">${d.error || d.msg || 'Tente buscar novamente ou envie o CSV manualmente.'}</div>
+    <button class="prod-upload-btn" onclick="forcarAtualizacaoBanksoft()">🔄 Buscar do Banksoft</button>
+    <div style="margin-top:10px">
+      <input type="file" id="prod-file-input" accept=".csv" style="display:none" onchange="handleCSV(this)">
+      <button class="prod-upload-btn" style="background:none;color:var(--tp);border:1px solid var(--bd)" onclick="document.getElementById('prod-file-input').click()">Ou enviar CSV manualmente</button>
+    </div>
+  </div>`;
+}
+
+function forcarAtualizacaoBanksoft() {
+  if (banksoftPollTimer) clearTimeout(banksoftPollTimer);
+  renderProdLoading('Buscando produção mais recente no Banksoft...');
+  fetch('/api/producao?forcar=true')
+    .then(() => { banksoftPollTimer = setTimeout(fetchProducaoStatus, 8000); })
+    .catch(() => { banksoftPollTimer = setTimeout(fetchProducaoStatus, 8000); });
 }
 
 // ── Checkbox dropdown helpers ──────────────────────────────────────
@@ -2446,6 +2507,7 @@ function switchTab(name,btn){
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');btn.classList.add('active');
+  if (name === 'corbans') initProducaoBanksoft();
 }
 document.getElementById('modal-bg').addEventListener('click',function(e){if(e.target===this)fecharModal();});
 loadData();
