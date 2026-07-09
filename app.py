@@ -116,24 +116,54 @@ def buscar_producao_banksoft():
         return {'error': str(e), 'traceback': traceback.format_exc()[-800:]}
 
 
-@app.route('/api/producao')
-def get_producao():
-    forcar = request.args.get('forcar','false') == 'true'
+import threading as _threading
+
+def _rodar_banksoft_bg():
     with _banksoft_lock:
-        agora = datetime.now(BR_TZ)
-        cache_ok = (
-            _banksoft_cache['data'] is not None and
-            _banksoft_cache['updated'] is not None and
-            (agora - _banksoft_cache['updated']).seconds < 3600 and
-            not forcar
-        )
-        if cache_ok:
-            return jsonify({**_banksoft_cache['data'], 'cache': True})
         resultado = buscar_producao_banksoft()
         if 'error' not in resultado:
             _banksoft_cache['data']    = resultado
-            _banksoft_cache['updated'] = agora
-        return jsonify({**resultado, 'cache': False})
+            _banksoft_cache['updated'] = datetime.now(BR_TZ)
+            _banksoft_cache['running'] = False
+        else:
+            _banksoft_cache['last_error'] = resultado.get('error','')
+            _banksoft_cache['running']    = False
+
+@app.route('/api/producao')
+def get_producao():
+    forcar = request.args.get('forcar','false') == 'true'
+    agora  = datetime.now(BR_TZ)
+
+    # Check cache
+    cache_ok = (
+        _banksoft_cache.get('data') is not None and
+        _banksoft_cache.get('updated') is not None and
+        (agora - _banksoft_cache['updated']).seconds < 3600 and
+        not forcar
+    )
+    if cache_ok:
+        return jsonify({**_banksoft_cache['data'], 'cache': True})
+
+    # Check if already running
+    if _banksoft_cache.get('running'):
+        return jsonify({'status': 'processing', 'msg': 'Buscando dados do Banksoft... Tente novamente em 60 segundos.', 'cache': False})
+
+    # Start background task
+    _banksoft_cache['running'] = True
+    _banksoft_cache['last_error'] = None
+    t = _threading.Thread(target=_rodar_banksoft_bg, daemon=True)
+    t.start()
+
+    return jsonify({'status': 'processing', 'msg': 'Iniciando busca de dados. Tente novamente em 60 segundos.', 'cache': False})
+
+@app.route('/api/producao/status')
+def get_producao_status():
+    if _banksoft_cache.get('running'):
+        return jsonify({'status': 'processing', 'msg': 'Ainda buscando dados...'})
+    if _banksoft_cache.get('data'):
+        return jsonify({**_banksoft_cache['data'], 'cache': True, 'status': 'done'})
+    erro = _banksoft_cache.get('last_error', 'Nenhuma busca realizada ainda')
+    return jsonify({'status': 'idle', 'error': erro})
 
 
 def get_client():
