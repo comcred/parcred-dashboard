@@ -131,15 +131,10 @@ def buscar_producao_banksoft():
         
         # Try all possible report URLs
         PROD_CANDIDATES = [
+            f'{BASE}/Pages/Relatorios/ICRLProducaoAnalitico',
+            f'{BASE}/Pages/Relatorio/ICRLProducaoAnalitico',
+            f'{BASE}/Pages/Relatorios/ICRelatorioProducaoAnalitico',
             f'{BASE}/Pages/Relatorio/ICRelatorioProducaoAnalitico',
-            f'{BASE}/Pages/Relatorios/ICRelatorioProducaoAnalitico', 
-            f'{BASE}/Pages/Relatorio/ICProducaoAnalitico',
-            f'{BASE}/Pages/Relatorios/ICProducaoAnalitico',
-            f'{BASE}/Pages/Relatorio/ICRelatorioProducao',
-            f'{BASE}/Pages/Relatorio/ICRelatorioProducaoAnaliticoEmprestimo',
-            f'{BASE}/Pages/Relatorios/ICRelatorioProducaoAnaliticoEmprestimo',
-            f'{BASE}/Pages/EmprestimoConsignado/Relatorio/ICRelatorioProducaoAnalitico',
-            f'{BASE}/Pages/EmprestimoConsignado/ICRelatorioProducaoAnalitico',
         ]
         
         prod_url = None
