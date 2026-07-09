@@ -191,16 +191,45 @@ def buscar_producao_banksoft():
         # Origem = TODOS
         form4['ctl00$Cph$cbOrigens$CAMPO'] = '000000'
 
-        # Export CSV via PostBack
-        form4['__EVENTTARGET']   = 'ctl00$Cph$bbExportarCSV'
-        form4['__EVENTARGUMENT'] = ''
-        export_target = 'ctl00$Cph$bbExportarCSV'
-
+        # Export CSV - try different PostBack approaches
         session.headers.update({
             'Content-Type': 'application/x-www-form-urlencoded',
             'Referer': prod_url,
+            'X-Requested-With': '',
         })
-        r5 = session.post(prod_url, data=form4, allow_redirects=True, timeout=60)
+        
+        # First: try clicking Pesquisar to load results
+        form_pesq = dict(form4)
+        # Find pesquisar button
+        for inp in soup4.find_all('input', type='submit'):
+            val = (inp.get('value') or '').lower()
+            nm  = (inp.get('name') or '')
+            if 'pesq' in val or 'buscar' in val or 'filtrar' in val or 'consultar' in val:
+                form_pesq[nm] = inp.get('value','')
+                break
+        else:
+            # Try PostBack with bbPesquisar
+            form_pesq['__EVENTTARGET'] = 'ctl00$Cph$bbPesquisar'
+            form_pesq['__EVENTARGUMENT'] = ''
+        
+        r_pesq = session.post(prod_url, data=form_pesq, allow_redirects=True, timeout=60)
+        soup_pesq = BeautifulSoup(r_pesq.text, 'lxml')
+        
+        # Now export CSV from results page
+        form5 = {}
+        for inp in soup_pesq.find_all('input'):
+            if inp.get('name'):
+                form5[inp['name']] = inp.get('value','')
+        for sel in soup_pesq.find_all('select'):
+            if sel.get('name'):
+                opt = sel.find('option', selected=True) or sel.find('option')
+                form5[sel['name']] = opt.get('value','') if opt else ''
+        
+        form5['__EVENTTARGET']   = 'ctl00$Cph$bbExportarCSV'
+        form5['__EVENTARGUMENT'] = ''
+        
+        r5 = session.post(r_pesq.url, data=form5, allow_redirects=True, timeout=60)
+        export_target = 'ctl00$Cph$bbExportarCSV'
 
         # Parse CSV
         content_type = r5.headers.get('Content-Type','')
