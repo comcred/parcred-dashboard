@@ -95,7 +95,14 @@ def buscar_producao_banksoft():
                 page.click('a:has-text("Exportar CSV")')
             
             download = dl.value
-            csv_bytes = download.read_bytes()
+            # Save to temp file and read
+            import tempfile, os
+            tmp_path = tempfile.mktemp(suffix='.csv')
+            download.save_as(tmp_path)
+            with open(tmp_path, 'rb') as f:
+                csv_bytes = f.read()
+            try: os.unlink(tmp_path)
+            except: pass
             browser.close()
 
             # Parse CSV
