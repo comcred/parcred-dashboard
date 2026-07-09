@@ -1,9 +1,3 @@
-import subprocess
-try:
-    subprocess.run(['python', '-m', 'playwright', 'install', 'chromium'], 
-                  capture_output=True, timeout=120)
-except: pass
-
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify, request, send_from_directory, make_response
 from flask_cors import CORS
@@ -49,10 +43,16 @@ def buscar_producao_banksoft():
         
         BASE = 'https://parcred.banksofttecnologia.com.br/AppConsig'
 
+        # Install chromium if not present
+        import subprocess as sp
+        sp.run(['python', '-m', 'playwright', 'install', 'chromium'], 
+               capture_output=True, timeout=180)
+        
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=True,
-                args=['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']
+                args=['--no-sandbox','--disable-dev-shm-usage','--disable-gpu',
+                      '--disable-setuid-sandbox','--single-process']
             )
             page = browser.new_page()
             page.set_default_timeout(30000)
