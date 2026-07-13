@@ -3,8 +3,8 @@ from flask import Flask, jsonify, request, send_from_directory, make_response
 from flask_cors import CORS
 import gspread
 from google.oauth2.service_account import Credentials
-import os, json
-from datetime import datetime
+import os, json, re
+from datetime import datetime, timedelta
 import pytz
 
 app = Flask(__name__, static_folder='static')
@@ -256,20 +256,82 @@ def get_sheet(name):
 
 PRODUCAO_SHEET_NOME = 'Produção Analitico'
 
+MONEY_COLS = {'Valor Financiado','Valor Líquido','Valor Operação (bruto)','Valor Seguro','Valor TC','Parcela'}
+DATE_COLS  = {'Data Digitação','Data Movimentação','Data Nascimento'}
+
+
+def _serial_para_datetime(serial):
+    # Epoch usado pelo Google Sheets / Excel: 30/12/1899
+    return datetime(1899, 12, 30) + timedelta(days=float(serial))
+
+
+def _formatar_celula(header, valor):
+    """Normaliza uma célula vinda com UNFORMATTED_VALUE para o formato de texto
+    que o dashboard espera, independente de como o Google Sheets exibiria a célula."""
+    if valor is None:
+        return ''
+
+    if header in DATE_COLS:
+        if isinstance(valor, (int, float)):
+            dt = _serial_para_datetime(valor)
+            if dt.hour == 0 and dt.minute == 0 and dt.second == 0:
+                return dt.strftime('%d/%m/%Y')
+            return dt.strftime('%d/%m/%Y %H:%M:%S')
+        s = str(valor).strip()
+        m = re.match(r'^(\d{1,2})/(\d{1,2})/(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$', s)
+        if m:
+            d, mo, y, h, mi, se = m.groups()
+            h = h or '00'; mi = mi or '00'; se = se or '00'
+            return f'{int(d):02d}/{int(mo):02d}/{y} {int(h):02d}:{int(mi):02d}:{int(se):02d}'
+        return s
+
+    if header in MONEY_COLS:
+        if isinstance(valor, (int, float)):
+            num = float(valor)
+        else:
+            s = str(valor).strip()
+            if not s:
+                return ''
+            try:
+                if ',' in s and '.' in s:
+                    s2 = s.replace('.', '').replace(',', '.')
+                elif ',' in s:
+                    s2 = s.replace(',', '.')
+                else:
+                    s2 = s
+                num = float(s2)
+            except ValueError:
+                return s
+        txt = f'{num:,.2f}'.replace(',', '§').replace('.', ',').replace('§', '.')
+        return txt
+
+    if isinstance(valor, float) and valor.is_integer():
+        return str(int(valor))
+    return str(valor) if valor is not None else ''
+
+
 @app.route('/api/producao/sheet')
 def get_producao_sheet():
     try:
-        ws   = get_sheet(PRODUCAO_SHEET_NOME)
-        vals = ws.get_all_values()
+        ws = get_sheet(PRODUCAO_SHEET_NOME)
+        try:
+            vals = ws.get_all_values(value_render_option='UNFORMATTED_VALUE')
+        except TypeError:
+            # fallback caso a versão do gspread não aceite esse parâmetro
+            vals = ws.get_all_values()
+
         if not vals or len(vals) < 2:
             return jsonify({'status': 'idle', 'error': f'A aba "{PRODUCAO_SHEET_NOME}" está vazia ou não tem dados.'})
 
-        headers = [h.strip() for h in vals[0]]
+        headers = [str(h).strip() for h in vals[0]]
         rows = []
         for r in vals[1:]:
-            if not any(c.strip() for c in r):
+            if not any(str(c).strip() for c in r):
                 continue
-            row = {headers[i]: (r[i] if i < len(r) else '') for i in range(len(headers))}
+            row = {}
+            for i, h in enumerate(headers):
+                cel = r[i] if i < len(r) else ''
+                row[h] = _formatar_celula(h, cel)
             rows.append(row)
 
         now_br = datetime.now(BR_TZ).strftime('%d/%m/%Y %H:%M')
