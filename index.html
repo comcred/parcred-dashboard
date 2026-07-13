@@ -703,7 +703,7 @@ table.ctrl-sub-table tr:last-child td{border-bottom:none}
     <div class="prod-upload-area" id="prod-upload-area">
       <div class="prod-upload-box" id="prod-upload-box">
         <div class="prod-upload-icon">⏳</div>
-        <div class="prod-upload-title">Carregando produção do Banksoft...</div>
+        <div class="prod-upload-title">Carregando produção da planilha...</div>
         <div class="prod-upload-sub">Isso pode levar alguns segundos</div>
       </div>
     </div>
@@ -1498,24 +1498,20 @@ function clearProducao() {
   renderControleCorbans();
 }
 
-// ── Carregamento automático via Banksoft ────────────────────────────
-let banksoftPollTimer = null;
-
-function initProducaoBanksoft() {
+// ── Carregamento automático via planilha "Produção Analitico" ──────
+function initProducaoSheet() {
   if (prodData.length > 0) return; // já carregado nesta sessão
-  fetchProducaoStatus();
+  fetchProducaoSheet();
 }
 
-function fetchProducaoStatus() {
-  fetch('/api/producao/status')
+function fetchProducaoSheet() {
+  renderProdLoading('Carregando produção da planilha...');
+  fetch('/api/producao/sheet')
     .then(r => r.json())
     .then(d => {
       if (d.status === 'done' && d.rows && d.rows.length) {
         processProducaoData(d.rows);
-        renderProdBanksoftInfo(d);
-      } else if (d.status === 'processing') {
-        renderProdLoading('Buscando produção mais recente no Banksoft...');
-        banksoftPollTimer = setTimeout(fetchProducaoStatus, 5000);
+        renderProdSheetInfo(d);
       } else {
         renderProdFallback(d);
       }
@@ -1526,16 +1522,16 @@ function fetchProducaoStatus() {
 function renderProdLoading(msg) {
   const el = document.getElementById('prod-upload-area');
   if (!el) return;
-  el.innerHTML = `<div class="prod-upload-box"><div class="prod-upload-icon">⏳</div><div class="prod-upload-title">${msg}</div><div class="prod-upload-sub">Isso pode levar alguns minutos</div></div>`;
+  el.innerHTML = `<div class="prod-upload-box"><div class="prod-upload-icon">⏳</div><div class="prod-upload-title">${msg}</div></div>`;
 }
 
-function renderProdBanksoftInfo(d) {
+function renderProdSheetInfo(d) {
   const el = document.getElementById('prod-upload-area');
   if (!el) return;
   el.innerHTML = `<div class="prod-upload-info" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-    <span>✓ Produção carregada do Banksoft — atualizado em ${d.atualizado} · ${d.total} propostas · período ${d.periodo}</span>
+    <span>✓ Produção carregada da planilha — atualizado em ${d.atualizado} · ${d.total} propostas</span>
     <div style="display:flex;gap:8px">
-      <button onclick="forcarAtualizacaoBanksoft()" style="background:none;border:1px solid var(--bd);border-radius:6px;padding:6px 10px;cursor:pointer;font-size:12px;font-weight:700">🔄 Atualizar</button>
+      <button onclick="fetchProducaoSheet()" style="background:none;border:1px solid var(--bd);border-radius:6px;padding:6px 10px;cursor:pointer;font-size:12px;font-weight:700">🔄 Recarregar</button>
       <input type="file" id="prod-file-input" accept=".csv" style="display:none" onchange="handleCSV(this)">
       <button onclick="document.getElementById('prod-file-input').click()" style="background:none;border:1px solid var(--bd);border-radius:6px;padding:6px 10px;cursor:pointer;font-size:12px;font-weight:700">📂 Usar CSV</button>
     </div>
@@ -1547,22 +1543,14 @@ function renderProdFallback(d) {
   if (!el) return;
   el.innerHTML = `<div class="prod-upload-box">
     <div class="prod-upload-icon">⚠️</div>
-    <div class="prod-upload-title">Não foi possível carregar do Banksoft</div>
-    <div class="prod-upload-sub">${d.error || d.msg || 'Tente buscar novamente ou envie o CSV manualmente.'}</div>
-    <button class="prod-upload-btn" onclick="forcarAtualizacaoBanksoft()">🔄 Buscar do Banksoft</button>
+    <div class="prod-upload-title">Não foi possível carregar a planilha "Produção Analitico"</div>
+    <div class="prod-upload-sub">${d.error || d.msg || 'Confira se a aba existe na planilha e tente novamente.'}</div>
+    <button class="prod-upload-btn" onclick="fetchProducaoSheet()">🔄 Tentar novamente</button>
     <div style="margin-top:10px">
       <input type="file" id="prod-file-input" accept=".csv" style="display:none" onchange="handleCSV(this)">
       <button class="prod-upload-btn" style="background:none;color:var(--tp);border:1px solid var(--bd)" onclick="document.getElementById('prod-file-input').click()">Ou enviar CSV manualmente</button>
     </div>
   </div>`;
-}
-
-function forcarAtualizacaoBanksoft() {
-  if (banksoftPollTimer) clearTimeout(banksoftPollTimer);
-  renderProdLoading('Buscando produção mais recente no Banksoft...');
-  fetch('/api/producao?forcar=true')
-    .then(() => { banksoftPollTimer = setTimeout(fetchProducaoStatus, 8000); })
-    .catch(() => { banksoftPollTimer = setTimeout(fetchProducaoStatus, 8000); });
 }
 
 // ── Checkbox dropdown helpers ──────────────────────────────────────
@@ -2576,7 +2564,7 @@ function switchTab(name,btn){
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');btn.classList.add('active');
-  if (name === 'corbans') initProducaoBanksoft();
+  if (name === 'corbans') initProducaoSheet();
 }
 document.getElementById('modal-bg').addEventListener('click',function(e){if(e.target===this)fecharModal();});
 loadData();
