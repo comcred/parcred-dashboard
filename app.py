@@ -310,6 +310,29 @@ def _formatar_celula(header, valor):
     return str(valor) if valor is not None else ''
 
 
+@app.route('/api/producao/sheet/debug')
+def get_producao_sheet_debug():
+    try:
+        ws = get_sheet(PRODUCAO_SHEET_NOME)
+        try:
+            vals = ws.get_all_values(value_render_option='UNFORMATTED_VALUE')
+        except TypeError:
+            vals = ws.get_all_values()
+        if not vals:
+            return jsonify({'error': 'aba vazia'})
+        headers = [str(h) for h in vals[0]]
+        primeira = vals[1] if len(vals) > 1 else []
+        primeira_dict = {headers[i]: primeira[i] for i in range(min(len(headers), len(primeira)))}
+        return jsonify({
+            'total_linhas': len(vals) - 1,
+            'total_colunas': len(headers),
+            'headers': headers,
+            'primeira_linha_raw': primeira_dict,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+
 @app.route('/api/producao/sheet')
 def get_producao_sheet():
     try:
