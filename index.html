@@ -206,6 +206,27 @@ tbody td{padding:9px 14px;vertical-align:middle}
 .pb-wrap{background:#e5e7eb;border-radius:4px;height:6px;margin-top:4px}
 .pb-fill{height:6px;border-radius:4px;background:var(--gm)}
 .corbans-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-bottom:28px}
+.ctrl-corban-filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.ctrl-corban-filters select,.ctrl-corban-filters input{padding:7px 12px;border:1px solid var(--bd);border-radius:var(--rs);font-size:12px;color:var(--tl);background:#fff;outline:none}
+.ctrl-corban-filters select{min-width:170px}
+.ctrl-corban-filters input{min-width:220px}
+.ctrl-corban-filters select:focus,.ctrl-corban-filters input:focus{border-color:var(--gm)}
+table.ctrl-table{width:100%;border-collapse:collapse;font-size:12px}
+table.ctrl-table thead tr{background:var(--gp);border-bottom:1px solid var(--bd)}
+table.ctrl-table th{padding:10px 14px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--gd)}
+table.ctrl-table td{padding:10px 14px;border-bottom:1px solid var(--bd)}
+.ctrl-expand-btn{width:22px;height:22px;border-radius:5px;border:1px solid var(--bd);background:#fff;color:var(--tp);font-weight:700;font-size:13px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center;transition:transform .15s}
+.ctrl-expand-btn.open{transform:rotate(45deg);background:var(--gp);border-color:var(--gm)}
+.ctrl-status-badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:3px 9px;border-radius:20px;display:inline-block}
+.ctrl-status-badge.assinado{background:#e6f4ea;color:var(--gd)}
+.ctrl-status-badge.negociacao{background:#fef3c7;color:#92400e}
+.ctrl-sub-row td{padding:0;border-bottom:1px solid var(--bd);background:var(--bg)}
+.ctrl-sub-wrap{padding:12px 14px 16px 46px}
+.ctrl-sub-empty{font-size:12px;color:var(--tm);padding:6px 0}
+table.ctrl-sub-table{width:100%;border-collapse:collapse;font-size:11.5px}
+table.ctrl-sub-table th{text-align:left;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--tl);padding:6px 10px;border-bottom:1px solid var(--bd)}
+table.ctrl-sub-table td{padding:6px 10px;border-bottom:1px solid #eef1ee}
+table.ctrl-sub-table tr:last-child td{border-bottom:none}
 .corban-card{background:var(--cb);border:1px solid var(--bd);border-radius:var(--r);padding:16px 18px}
 .corban-card.assinado{border-left:4px solid var(--gm)}
 .corban-card.negociacao{border-left:4px solid #f59e0b}
@@ -656,6 +677,28 @@ tbody td{padding:9px 14px;vertical-align:middle}
   </div>
 
     <div id="tab-corbans" class="tab-panel">
+
+    <div class="section-title">Controle de Corbans</div>
+    <div class="ctrl-corban-filters">
+      <select id="ctrl-corban-status" onchange="renderControleCorbans()">
+        <option value="">Todos os status</option>
+        <option value="Assinado">Assinado</option>
+        <option value="Em Negociação">Em Negociação</option>
+      </select>
+      <input type="text" id="ctrl-corban-search" placeholder="Buscar corban..." oninput="renderControleCorbans()">
+    </div>
+    <div class="table-section" style="margin-bottom:28px">
+      <div style="overflow-x:auto">
+        <table class="ctrl-table">
+          <thead><tr>
+            <th style="width:34px"></th><th>Corban</th><th>Status</th>
+            <th style="text-align:right">Praças Credenciadas</th>
+            <th style="text-align:right">Produção Total</th>
+          </tr></thead>
+          <tbody id="ctrl-corban-tbody"><tr><td colspan="5" style="text-align:center;padding:24px;color:var(--tm)">Carregando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
 
     <div style="border-top:2px solid var(--bd);margin:32px 0 24px"></div>
     <div class="section-title">Análise de Produção por Corban</div>
@@ -1516,6 +1559,7 @@ function processProducaoData(rows) {
 
   document.getElementById('prod-content').style.display = 'block';
   renderProducao();
+  renderControleCorbans();
 }
 
 function clearProducao() {
@@ -1526,6 +1570,7 @@ function clearProducao() {
   Object.values(prodCharts).forEach(c => { try { c.destroy(); } catch(e) {} });
   prodCharts = {};
   Object.keys(prodDDState).forEach(k => prodDDState[k].clear());
+  renderControleCorbans();
 }
 
 // ── Carregamento automático via Banksoft ────────────────────────────
@@ -2454,7 +2499,110 @@ function salvarEvolucao(){
     .catch(e=>{btn.disabled=false;btn.textContent='Salvar';showToast('Erro: '+e.message,true);});
 }
 
+// ── CONTROLE DE CORBANS ──────────────────────────────────────────
+const ctrlExpanded = new Set();
+
+function normCorbanName(s) {
+  return (s || '')
+    .toUpperCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\bLTDA\b.*$/, '')
+    .replace(/\bASSESSORIA\b.*$/, '')
+    .replace(/\bGESTAO\b.*$/, '')
+    .replace(/\bCOBRANCA\b.*$/, '')
+    .replace(/\bCONSULTORIA\b.*$/, '')
+    .replace(/[^A-Z0-9]/g, '')
+    .trim();
+}
+
+function corbanProdRows(nome) {
+  const n = normCorbanName(nome);
+  if (!n) return [];
+  return prodData.filter(r => {
+    const rn = normCorbanName(r.cb);
+    return rn === n || rn.includes(n) || n.includes(rn);
+  });
+}
+
+function renderControleCorbans() {
+  const tbody = document.getElementById('ctrl-corban-tbody');
+  if (!tbody) return;
+  const statusF = document.getElementById('ctrl-corban-status')?.value || '';
+  const searchF = (document.getElementById('ctrl-corban-search')?.value || '').toLowerCase().trim();
+
+  let list = corbansData.slice();
+  if (statusF) list = list.filter(c => c.status === statusF);
+  if (searchF) list = list.filter(c => c.nome.toLowerCase().includes(searchF));
+  list.sort((a, b) => a.nome.localeCompare(b.nome));
+
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--tm)">Nenhum corban encontrado.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = list.map((c, i) => {
+    const id = 'ctrl-' + i;
+    const rows = corbanProdRows(c.nome);
+    const total = rows.reduce((s, r) => s + r.vl, 0);
+    const totalTxt = prodData.length ? 'R$ ' + fmtBR(total) : '—';
+    const statusCls = c.status === 'Assinado' ? 'assinado' : 'negociacao';
+    const open = ctrlExpanded.has(c.nome);
+    return `
+      <tr>
+        <td><button class="ctrl-expand-btn${open ? ' open' : ''}" id="btn-${id}" onclick="toggleControleCorban('${c.nome.replace(/'/g, "\\'")}', '${id}')">+</button></td>
+        <td style="font-weight:700">${c.nome}</td>
+        <td><span class="ctrl-status-badge ${statusCls}">${c.status}</span></td>
+        <td style="text-align:right">${c.pracas.length}</td>
+        <td style="text-align:right;font-weight:700">${totalTxt}</td>
+      </tr>
+      <tr class="ctrl-sub-row" id="sub-${id}" style="display:${open ? 'table-row' : 'none'}">
+        <td colspan="5"><div class="ctrl-sub-wrap">${renderCorbanSubTable(c.nome)}</div></td>
+      </tr>`;
+  }).join('');
+}
+
+function renderCorbanSubTable(nome) {
+  if (!prodData.length) {
+    return '<div class="ctrl-sub-empty">Dados de produção ainda não carregados — abra a seção "Análise de Produção por Corban" acima e aguarde o carregamento do Banksoft.</div>';
+  }
+  const rows = corbanProdRows(nome);
+  if (!rows.length) {
+    return '<div class="ctrl-sub-empty">Nenhuma produção encontrada para este corban no período carregado.</div>';
+  }
+  const byMun = {};
+  rows.forEach(r => {
+    if (!byMun[r.cv]) byMun[r.cv] = { vl: 0, n: 0 };
+    byMun[r.cv].vl += r.vl;
+    byMun[r.cv].n += 1;
+  });
+  const entries = Object.entries(byMun).sort((a, b) => b[1].vl - a[1].vl);
+  return `<table class="ctrl-sub-table">
+    <thead><tr><th>Município / Convênio</th><th style="text-align:right">Contratos</th><th style="text-align:right">Valor Total</th><th style="text-align:right">Ticket Médio</th></tr></thead>
+    <tbody>${entries.map(([mun, v]) => `
+      <tr><td>${mun}</td><td style="text-align:right">${v.n}</td>
+      <td style="text-align:right">R$ ${fmtBR(v.vl)}</td>
+      <td style="text-align:right">R$ ${fmtBR(v.vl / v.n)}</td></tr>`).join('')}
+    </tbody></table>`;
+}
+
+function toggleControleCorban(nome, id) {
+  const sub = document.getElementById('sub-' + id);
+  const btn = document.getElementById('btn-' + id);
+  const willOpen = !ctrlExpanded.has(nome);
+  if (willOpen) {
+    ctrlExpanded.add(nome);
+    sub.innerHTML = '<td colspan="5"><div class="ctrl-sub-wrap">' + renderCorbanSubTable(nome) + '</div></td>';
+    sub.style.display = 'table-row';
+    btn.classList.add('open');
+  } else {
+    ctrlExpanded.delete(nome);
+    sub.style.display = 'none';
+    btn.classList.remove('open');
+  }
+}
+
 function buildCorbans(){
+  renderControleCorbans();
   // Skip corbans cards (removed from UI)
   if(document.getElementById('onb-tbody')) loadOnboarding();
   if(document.getElementById('cob-grid')) buildCobertura();
