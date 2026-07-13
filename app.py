@@ -474,6 +474,72 @@ def adicionar():
     except Exception as e:
         return jsonify({'ok':False,'msg':str(e)})
 
+GIRO_SHEET_NOME = 'Giro de Carteira'
+GIRO_HEADERS = ['Data','Corban','Responsável','Participantes','Pontos Discutidos','Produção do Período','Próximos Passos','Follow-up']
+
+def _parse_data_br(s):
+    for fmt in ('%d/%m/%Y %H:%M', '%d/%m/%Y'):
+        try:
+            return datetime.strptime(s, fmt)
+        except Exception:
+            continue
+    return datetime.min
+
+@app.route('/api/corbans/giro', methods=['GET'])
+def get_giro():
+    try:
+        ws   = get_sheet(GIRO_SHEET_NOME)
+        vals = ws.get_all_values()
+        if not vals or len(vals) < 2:
+            return jsonify([])
+
+        corban_filtro = request.args.get('corban', '').strip()
+        rows = []
+        for r in vals[1:]:
+            if not any(c.strip() for c in r):
+                continue
+            def g(i): return r[i].strip() if i < len(r) else ''
+            item = {
+                'data': g(0), 'corban': g(1), 'responsavel': g(2),
+                'participantes': g(3), 'pontos': g(4),
+                'producao': g(5), 'proxPassos': g(6), 'followUp': g(7)
+            }
+            if corban_filtro and item['corban'] != corban_filtro:
+                continue
+            rows.append(item)
+
+        rows.sort(key=lambda x: _parse_data_br(x['data']), reverse=True)
+        return jsonify(rows)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/corbans/giro', methods=['POST'])
+def post_giro():
+    try:
+        dados       = request.json or {}
+        corban      = (dados.get('corban') or '').strip()
+        pontos      = (dados.get('pontos') or '').strip()
+        responsavel = (dados.get('responsavel') or '').strip()
+        if not corban or not pontos or not responsavel:
+            return jsonify({'ok': False, 'msg': 'Corban, responsável e pontos discutidos são obrigatórios.'})
+
+        ws   = get_sheet(GIRO_SHEET_NOME)
+        vals = ws.get_all_values()
+        if not vals:
+            ws.append_row(GIRO_HEADERS)
+
+        agora = datetime.now(BR_TZ).strftime('%d/%m/%Y %H:%M')
+        ws.append_row([
+            agora, corban, responsavel,
+            dados.get('participantes', ''), pontos,
+            dados.get('producao', ''), dados.get('proxPassos', ''), dados.get('followUp', '')
+        ])
+        return jsonify({'ok': True, 'msg': 'Reunião registrada com sucesso!'})
+    except Exception as e:
+        return jsonify({'ok': False, 'msg': str(e)})
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT',5000))
     app.run(host='0.0.0.0',port=port)
