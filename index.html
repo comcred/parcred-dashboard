@@ -1955,18 +1955,21 @@ function populateGiroSelects() {
   const names = corbansData.map(c => c.nome).sort();
   ['giro-corban','giro-filter-corban'].forEach(id => {
     const sel = document.getElementById(id);
+    if (!sel) return;
     const isFilter = id === 'giro-filter-corban';
     sel.innerHTML = (isFilter ? '<option value="">Todos os corbans</option>' : '<option value="">Selecione...</option>') + names.map(n=>`<option>${n}</option>`).join('');
   });
   const respSel = document.getElementById('giro-resp');
-  respSel.innerHTML = '<option value="">Selecione...</option>' + equipe.map(e=>`<option>${e}</option>`).join('');
+  if (respSel) respSel.innerHTML = '<option value="">Selecione...</option>' + equipe.map(e=>`<option>${e}</option>`).join('');
 }
 
 function loadGiro() {
-  const corban = document.getElementById('giro-filter-corban').value;
+  const filterEl = document.getElementById('giro-filter-corban');
+  const el = document.getElementById('giro-list');
+  if (!filterEl || !el) return;
+  const corban = filterEl.value;
   const url = '/api/corbans/giro' + (corban ? '?corban=' + encodeURIComponent(corban) : '');
   fetch(url).then(r=>r.json()).then(rows => {
-    const el = document.getElementById('giro-list');
     if (!rows.length) { el.innerHTML = '<div class="giro-empty">Nenhuma reunião registrada ainda.</div>'; return; }
     el.innerHTML = rows.map(r => `
       <div class="giro-item">
