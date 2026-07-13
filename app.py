@@ -25,13 +25,33 @@ import io
 
 _banksoft_cache = {'data': None, 'updated': None}
 _banksoft_lock  = threading.Lock()
+_chromium_ready = False
 
 BANKSOFT_BASE = 'https://parcred.banksofttecnologia.com.br/AppConsig'
 
+TIMEOUT_NAV = 90000       # navegação (login, páginas)
+TIMEOUT_DOWNLOAD = 90000  # aguardar o download do CSV começar
+
+
+def _goto_com_retry(page, url, tentativas=2, timeout=TIMEOUT_NAV):
+    """Tenta navegar até `url`, repetindo em caso de timeout antes de desistir."""
+    ultimo_erro = None
+    for i in range(tentativas):
+        try:
+            page.goto(url, wait_until='domcontentloaded', timeout=timeout)
+            return
+        except Exception as e:
+            ultimo_erro = e
+            page.wait_for_timeout(2000)
+    raise ultimo_erro
+
+
 def buscar_producao_banksoft():
+    global _chromium_ready
+    debug = {}
     try:
         from playwright.sync_api import sync_playwright
-        
+
         usuario = os.environ.get('BANKSOFT_USER', '')
         senha   = os.environ.get('BANKSOFT_PASS', '')
         if not usuario or not senha:
@@ -40,14 +60,17 @@ def buscar_producao_banksoft():
         hoje   = datetime.now(BR_TZ)
         dt_ini = '01/05/2026'
         dt_fim = hoje.strftime('%d/%m/%Y')
-        
+
         BASE = 'https://parcred.banksofttecnologia.com.br/AppConsig'
 
-        # Install chromium if not present
-        import subprocess as sp
-        sp.run(['python', '-m', 'playwright', 'install', 'chromium'], 
-               capture_output=True, timeout=180)
-        
+        # Instala o chromium apenas na primeira vez que este processo roda
+        # (evita repetir esse passo caro a cada chamada e reduz risco de timeout)
+        if not _chromium_ready:
+            import subprocess as sp
+            sp.run(['python', '-m', 'playwright', 'install', 'chromium'],
+                   capture_output=True, timeout=180)
+            _chromium_ready = True
+
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=True,
@@ -55,20 +78,20 @@ def buscar_producao_banksoft():
                       '--disable-setuid-sandbox','--single-process']
             )
             page = browser.new_page()
-            page.set_default_timeout(30000)
+            page.set_default_timeout(TIMEOUT_NAV)
 
-            # Login
-            page.set_default_timeout(60000)
-            page.goto(f'{BASE}/Login/ICLogin', wait_until='domcontentloaded', timeout=60000)
+            # Login (com retry em caso de timeout na navegação)
+            _goto_com_retry(page, f'{BASE}/Login/ICLogin', tentativas=2, timeout=TIMEOUT_NAV)
             page.wait_for_timeout(2000)
             page.fill('input[name="txtUsuario$CAMPO"]', usuario)
             page.fill('input[name="txtSenha$CAMPO"]', senha)
             page.click('a:has-text("Acessar"), input[type="submit"], button[type="submit"]')
-            page.wait_for_load_state('domcontentloaded', timeout=60000)
+            page.wait_for_load_state('domcontentloaded', timeout=TIMEOUT_NAV)
             page.wait_for_timeout(3000)
 
             # Navigate to report
-            page.goto(f'{BASE}/Pages/Relatorios/ICRLProducaoAnalitico', wait_until='domcontentloaded', timeout=60000)
+            _goto_com_retry(page, f'{BASE}/Pages/Relatorios/ICRLProducaoAnalitico',
+                             tentativas=2, timeout=TIMEOUT_NAV)
             page.wait_for_timeout(3000)
 
             # Fill dates
@@ -76,24 +99,69 @@ def buscar_producao_banksoft():
             page.fill('input[name="ctl00$Cph$txtFaixaData$edit2$CAMPO"]', dt_fim)
 
             # Uncheck all status checkboxes then check only Integrado
+            # (capturamos o resultado de cada uma para diagnosticar filtros incompletos)
+            debug['checkboxes'] = {}
             for chk in ['chkStatusSimulacao','chkStatusCadastro','chkStatusAndamento',
                         'chkStatusPendente','chkStatusAprovado','chkStatusLiberado','chkStatusReprovado']:
                 try:
                     cb = page.locator(f'input[name="ctl00$Cph${chk}"]')
-                    if cb.is_checked():
+                    estava = cb.is_checked()
+                    if estava:
                         cb.uncheck()
-                except: pass
-            
+                    debug['checkboxes'][chk] = f'ok (estava marcado={estava})'
+                except Exception as e:
+                    debug['checkboxes'][chk] = f'ERRO: {e}'
+
             try:
                 cb_int = page.locator('input[name="ctl00$Cph$chkStatusIntegrado"]')
-                if not cb_int.is_checked():
+                estava = cb_int.is_checked()
+                if not estava:
                     cb_int.check()
-            except: pass
+                debug['checkboxes']['chkStatusIntegrado'] = f'ok (estava marcado={estava})'
+            except Exception as e:
+                debug['checkboxes']['chkStatusIntegrado'] = f'ERRO: {e}'
+
+            # Tenta detectar e maximizar um seletor de "itens por página" / "quantidade de registros",
+            # caso o grid do relatório seja paginado e o CSV exporte só a página atual.
+            try:
+                pagesize_sel = None
+                for sel in page.locator('select').all():
+                    try:
+                        nome_attr = ((sel.get_attribute('name') or '') + (sel.get_attribute('id') or '')).lower()
+                    except Exception:
+                        nome_attr = ''
+                    if any(h in nome_attr for h in ['pagesize','qtdregistro','qtdpagina','tamanhopagina','registrospagina','itenspagina','ddlqtd']):
+                        pagesize_sel = sel
+                        break
+                if pagesize_sel:
+                    opts = [o.strip() for o in pagesize_sel.locator('option').all_text_contents() if o.strip()]
+                    todos_opt = next((o for o in opts if 'todos' in o.lower() or 'all' in o.lower()), None)
+                    if todos_opt:
+                        pagesize_sel.select_option(label=todos_opt)
+                        debug['pagesize'] = f'selecionado "{todos_opt}"'
+                    else:
+                        numericos = [o for o in opts if o.replace('.','').isdigit()]
+                        if numericos:
+                            maior = max(numericos, key=lambda x: int(x.replace('.','')))
+                            pagesize_sel.select_option(label=maior)
+                            debug['pagesize'] = f'selecionado "{maior}"'
+                    page.wait_for_timeout(1500)
+                else:
+                    debug['pagesize'] = 'nenhum seletor de itens-por-página encontrado na página'
+            except Exception as e:
+                debug['pagesize'] = f'ERRO: {e}'
+
+            # Captura qualquer texto de "total de registros" visível na página, para conferência
+            try:
+                totais = page.locator('text=/[Tt]otal.{0,15}\\d/').all_text_contents()
+                debug['totais_na_pagina'] = [t.strip() for t in totais[:6]]
+            except Exception as e:
+                debug['totais_na_pagina'] = f'ERRO: {e}'
 
             # Download CSV
-            with page.expect_download(timeout=60000) as dl:
+            with page.expect_download(timeout=TIMEOUT_DOWNLOAD) as dl:
                 page.click('a:has-text("Exportar CSV")')
-            
+
             download = dl.value
             import tempfile as _tf
             tmp_path = _tf.mktemp(suffix='.csv')
@@ -111,20 +179,21 @@ def buscar_producao_banksoft():
             text   = csv_bytes.decode('utf-8-sig', errors='replace')
             reader = csv.DictReader(io.StringIO(text), delimiter=';')
             rows   = [dict(r) for r in reader]
-            
+
             if not rows or len(rows[0]) < 3:
-                return {'error': 'CSV vazio ou inválido', 'preview': text[:200]}
+                return {'error': 'CSV vazio ou inválido', 'preview': text[:200], 'debug': debug}
 
             return {
                 'rows': rows,
                 'total': len(rows),
                 'periodo': f'{dt_ini} a {dt_fim}',
-                'atualizado': hoje.strftime('%d/%m/%Y %H:%M')
+                'atualizado': hoje.strftime('%d/%m/%Y %H:%M'),
+                'debug': debug
             }
 
     except Exception as e:
         import traceback
-        return {'error': str(e), 'traceback': traceback.format_exc()[-800:]}
+        return {'error': str(e), 'traceback': traceback.format_exc()[-800:], 'debug': debug}
 
 
 import threading as _threading
@@ -184,6 +253,35 @@ def get_client():
 
 def get_sheet(name):
     return get_client().open_by_key(SHEET_ID).worksheet(name)
+
+PRODUCAO_SHEET_NOME = 'Produção Analitico'
+
+@app.route('/api/producao/sheet')
+def get_producao_sheet():
+    try:
+        ws   = get_sheet(PRODUCAO_SHEET_NOME)
+        vals = ws.get_all_values()
+        if not vals or len(vals) < 2:
+            return jsonify({'status': 'idle', 'error': f'A aba "{PRODUCAO_SHEET_NOME}" está vazia ou não tem dados.'})
+
+        headers = [h.strip() for h in vals[0]]
+        rows = []
+        for r in vals[1:]:
+            if not any(c.strip() for c in r):
+                continue
+            row = {headers[i]: (r[i] if i < len(r) else '') for i in range(len(headers))}
+            rows.append(row)
+
+        now_br = datetime.now(BR_TZ).strftime('%d/%m/%Y %H:%M')
+        return jsonify({
+            'status': 'done',
+            'rows': rows,
+            'total': len(rows),
+            'atualizado': now_br,
+            'cache': False
+        })
+    except Exception as e:
+        return jsonify({'status': 'idle', 'error': str(e)})
 
 @app.route('/')
 def index():
