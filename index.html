@@ -561,17 +561,6 @@ table.ctrl-sub-table tr:last-child td{border-bottom:none}
 
 <div class="container">
   <div class="err" id="err"></div>
-  <div class="alert-banner" id="alert-banner">
-    <div class="alert-header" onclick="toggleAlertBody()">
-      <div class="alert-header-left">
-        <span class="alert-icon">⚠️</span>
-        <span class="alert-header-title">Convênios sem atualização há mais de 15 dias</span>
-        <span class="alert-header-count" id="alert-count">0</span>
-      </div>
-      <button class="alert-toggle" id="alert-toggle-btn">▼ Ver todos</button>
-    </div>
-    <div class="alert-body" id="alert-body" style="display:none"></div>
-  </div>
 
   <div class="tabs">
     <button class="tab active" onclick="switchTab('credenciamentos',this)">Credenciamentos</button>
@@ -766,20 +755,8 @@ table.ctrl-sub-table tr:last-child td{border-bottom:none}
       <div class="prod-chart-full"><div style="position:relative;height:260px"><canvas id="chartProdSemanal" role="img" aria-label="Valor semanal">.</canvas></div></div>
       <div class="section-title">Produção Semanal — Contratos</div>
       <div class="prod-chart-full"><div style="position:relative;height:220px"><canvas id="chartProdContratos" role="img" aria-label="Contratos semanais">.</canvas></div></div>
-      <div class="section-title">Desempenho por Corban</div>
-      <div class="grid-2" style="margin-bottom:24px">
-        <div class="chart-card"><h3>Ranking — Valor Total</h3><ul class="ranking-list" id="prod-ranking-valor"></ul></div>
-        <div class="chart-card"><h3>Ranking — Ticket Médio</h3><ul class="ranking-list" id="prod-ranking-ticket"></ul></div>
-      </div>
-      <div class="prod-corban-cards" id="prod-corban-cards"></div>
       <div class="section-title">Evolução Semanal por Corban</div>
       <div class="prod-chart-full"><div style="position:relative;height:320px"><canvas id="chartCorbanSemanal" role="img" aria-label="Evolução semanal por corban">.</canvas></div></div>
-      <div class="section-title">Valor por Convênio / Município</div>
-      <div class="prod-chart-full"><div style="position:relative;height:260px"><canvas id="chartConvenioValor" role="img" aria-label="Valor por convênio">.</canvas></div></div>
-      <div class="section-title">Ticket Médio por Convênio / Município</div>
-      <div class="prod-chart-full"><div style="position:relative;height:260px"><canvas id="chartConvenioTicket" role="img" aria-label="Ticket médio por convênio">.</canvas></div></div>
-      <div class="section-title">Evolução Semanal por Convênio</div>
-      <div class="prod-chart-full"><div style="position:relative;height:320px"><canvas id="chartConvenioSemanal" role="img" aria-label="Evolução semanal por convênio">.</canvas></div></div>
       <div class="section-title">Detalhamento por Convênio</div>
       <div class="table-section" style="margin-bottom:28px">
         <div style="overflow-x:auto"><table>
@@ -1332,38 +1309,6 @@ function buildUFListScroll(selUF){
 }
 
 
-function buildAlerts(alertas){
-  const banner=document.getElementById('alert-banner');
-  const count=document.getElementById('alert-count');
-  const body=document.getElementById('alert-body');
-  if(!alertas||!alertas.length){banner.classList.remove('show');return;}
-  banner.classList.add('show');
-  count.textContent=alertas.length;
-  body.innerHTML=alertas.map(a=>{
-    const grau=a.diasParado>=30?'grave':a.diasParado>=20?'medio':'leve';
-    return `<div class="alert-row">
-      <div class="alert-dias ${grau}"><span>${a.diasParado}d</span></div>
-      <div class="alert-nome">${a.nome}</div>
-      <span class="pill p${pk(a.status)} alert-status-pill">${a.status}</span>
-      <button class="alert-action" onclick="abrirModalPorNome('${a.nome.replace(/'/g,"\\'")}')">↑ Evoluir</button>
-    </div>`;
-  }).join('');
-}
-
-function toggleAlertBody(){
-  const body=document.getElementById('alert-body');
-  const btn=document.getElementById('alert-toggle-btn');
-  const open=body.style.display!=='none';
-  body.style.display=open?'none':'block';
-  btn.textContent=open?'▼ Ver todos':'▲ Fechar';
-}
-
-function abrirModalPorNome(nome){
-  const d=allData.find(x=>x.nome===nome);
-  if(d) abrirModal(d);
-}
-
-
 function buildProcessadoras(){
   const ATIVOS=['FILA','CONSULTA DE DADOS','CONSULTA TÉCNICA PROCESSADORA','JURÍDICO','COMITÊ EXECUTIVO','PENDÊNCIA COMITÊ','CREDENCIAMENTO','DOCS ENVIADOS','DOCS EM ANÁLISE','ASSINATURA','RUBRICA','CONTRATO PROCESSADORA','CREDENCIADO'];
 
@@ -1735,49 +1680,21 @@ function renderProducao() {
     return {c, v, n, t: n?v/n:0};
   }).sort((a,b)=>b.v-a.v);
 
-  const mV = cSt[0]?.v||1;
-  const mT = [...cSt].sort((a,b)=>b.t-a.t)[0]?.t||1;
-
-  document.getElementById('prod-ranking-valor').innerHTML = cSt.map((s,i)=>
-    `<li><div class="rank-num">${i+1}</div><div style="flex:1"><div class="rank-name" style="font-size:11px">${sn(s.c)}</div>
-    <div class="pb-wrap"><div class="pb-fill" style="width:${(s.v/mV*100).toFixed(0)}%"></div></div></div>
-    <div class="rank-val">R$ ${fmt(s.v)}</div></li>`).join('');
-
-  document.getElementById('prod-ranking-ticket').innerHTML = [...cSt].sort((a,b)=>b.t-a.t).map((s,i)=>
-    `<li><div class="rank-num">${i+1}</div><div style="flex:1"><div class="rank-name" style="font-size:11px">${sn(s.c)}</div>
-    <div class="pb-wrap"><div class="pb-fill" style="width:${(s.t/mT*100).toFixed(0)}%"></div></div></div>
-    <div class="rank-val">R$ ${fmtBR(s.t)}</div></li>`).join('');
-
   const lsK = sK[sK.length-1], psK = sK[sK.length-2];
-  document.getElementById('prod-corban-cards').innerHTML = cSt.map((s,i) => {
-    const lv = data.filter(r=>r.cb===s.c&&r.semKey===lsK).reduce((x,r)=>x+r.vl,0);
-    const pv = data.filter(r=>r.cb===s.c&&r.semKey===psK).reduce((x,r)=>x+r.vl,0);
-    const d  = lv-pv;
-    const tc = d>0?'trend-up':d<0?'trend-down':'trend-eq';
-    const tt = d>0?`▲ +R$ ${fmtBR(d)} vs semana anterior`:d<0?`▼ -R$ ${fmtBR(Math.abs(d))} vs semana anterior`:'= Igual à semana anterior';
-    return `<div class="prod-cc">
-      <div class="prod-cc-name">${sn(s.c)}</div>
-      <div class="prod-cc-rank">#${i+1} · ${s.n} contratos</div>
-      <div class="prod-cc-metrics">
-        <div class="prod-cc-m"><div class="l">Total</div><div class="v">R$ ${fmt(s.v)}</div></div>
-        <div class="prod-cc-m"><div class="l">Ticket Médio</div><div class="v">R$ ${fmtBR(s.t)}</div></div>
-        <div class="prod-cc-m"><div class="l">Última semana</div><div class="v">R$ ${fmt(lv)}</div></div>
-      </div>
-      <div class="prod-cc-trend"><span class="${tc}">${tt}</span></div>
-    </div>`;
-  }).join('');
 
   const lineOpts = {responsive:true,maintainAspectRatio:false,
     plugins:{legend:{display:true,position:'bottom',labels:{font:{size:10},padding:12,usePointStyle:true}},
       tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: R$ ${fmtBR(ctx.raw)}`}}},
     scales:{y:{ticks:{callback:v=>'R$'+fmt(v)},grid:{color:'#f0f4f1'}},x:{grid:{display:false},ticks:{font:{size:9},maxRotation:45,autoSkip:false}}}};
 
-  prodCharts.cs = new Chart(document.getElementById('chartCorbanSemanal'), {type:'line',
-    data:{labels:sL,datasets:corbans.map((c,i)=>({
-      label:sn(c),data:sK.map(k=>data.filter(r=>r.cb===c&&r.semKey===k).reduce((s,r)=>s+r.vl,0)),
-      borderColor:CORBAN_COLORS[i%CORBAN_COLORS.length],backgroundColor:CORBAN_COLORS[i%CORBAN_COLORS.length]+'22',
-      tension:.3,fill:false,pointRadius:4,borderWidth:2,borderDash:i>3?[5,3]:[]
-    }))},options:lineOpts});
+  if (document.getElementById('chartCorbanSemanal')) {
+    prodCharts.cs = new Chart(document.getElementById('chartCorbanSemanal'), {type:'line',
+      data:{labels:sL,datasets:corbans.map((c,i)=>({
+        label:sn(c),data:sK.map(k=>data.filter(r=>r.cb===c&&r.semKey===k).reduce((s,r)=>s+r.vl,0)),
+        borderColor:CORBAN_COLORS[i%CORBAN_COLORS.length],backgroundColor:CORBAN_COLORS[i%CORBAN_COLORS.length]+'22',
+        tension:.3,fill:false,pointRadius:4,borderWidth:2,borderDash:i>3?[5,3]:[]
+      }))},options:lineOpts});
+  }
 
   const convenios = [...new Set(data.map(r=>r.cv))].sort();
   const cvSt = convenios.map(c => {
@@ -1788,21 +1705,6 @@ function renderProducao() {
     const cbl = [...new Set(rows.map(r=>r.cb))];
     return {c, v, n, t: n?v/n:0, pm, cbl};
   }).sort((a,b)=>b.v-a.v);
-
-  const cvL = cvSt.map(s=>s.c.replace('Pref. ','').replace('Câm. ',''));
-
-  prodCharts.cvv = new Chart(document.getElementById('chartConvenioValor'), {type:'bar',
-    data:{labels:cvL,datasets:[{label:'Valor Total',data:cvSt.map(s=>s.v),backgroundColor:CONV_COLORS.slice(0,cvSt.length),borderRadius:5,borderSkipped:false}]},options:barOpts});
-
-  prodCharts.cvt = new Chart(document.getElementById('chartConvenioTicket'), {type:'bar',
-    data:{labels:cvL,datasets:[{label:'Ticket Médio',data:cvSt.map(s=>s.t),backgroundColor:CONV_COLORS.slice(0,cvSt.length),borderRadius:5,borderSkipped:false}]},options:barOpts});
-
-  prodCharts.cvs = new Chart(document.getElementById('chartConvenioSemanal'), {type:'line',
-    data:{labels:sL,datasets:convenios.map((c,i)=>({
-      label:c,data:sK.map(k=>data.filter(r=>r.cv===c&&r.semKey===k).reduce((s,r)=>s+r.vl,0)),
-      borderColor:CONV_COLORS[i%CONV_COLORS.length],backgroundColor:CONV_COLORS[i%CONV_COLORS.length]+'22',
-      tension:.3,fill:false,pointRadius:4,borderWidth:2,borderDash:i>2?[5,3]:[]
-    }))},options:lineOpts});
 
   document.getElementById('prod-conv-table').innerHTML = cvSt.map(s=>
     `<tr><td style="font-weight:600">${s.c}</td><td style="text-align:right">${s.n}</td>
@@ -2291,7 +2193,6 @@ function buildAll(){
   try{buildPotencial();}catch(e){console.error('buildPotencial',e);}
   try{preencherFormModal();}catch(e){console.error('preencherFormModal',e);}
   try{buildProcessadoras();}catch(e){console.error('buildProcessadoras',e);}
-  try{if(typeof alertasGlobais!=="undefined") buildAlerts(alertasGlobais);}catch(e){console.error('buildAlerts',e);}
 }
 
 function buildKPIs(){
