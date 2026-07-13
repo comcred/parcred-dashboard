@@ -217,9 +217,16 @@ table.ctrl-table th{padding:10px 14px;text-align:left;font-size:10px;font-weight
 table.ctrl-table td{padding:10px 14px;border-bottom:1px solid var(--bd)}
 .ctrl-expand-btn{width:22px;height:22px;border-radius:5px;border:1px solid var(--bd);background:#fff;color:var(--tp);font-weight:700;font-size:13px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center;transition:transform .15s}
 .ctrl-expand-btn.open{transform:rotate(45deg);background:var(--gp);border-color:var(--gm)}
-.ctrl-status-badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:3px 9px;border-radius:20px;display:inline-block}
+.ctrl-status-badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:3px 9px;border-radius:20px;display:inline-block;background:#f3f4f6;color:#374151}
 .ctrl-status-badge.assinado{background:#e6f4ea;color:var(--gd)}
-.ctrl-status-badge.negociacao{background:#fef3c7;color:#92400e}
+.ctrl-status-badge.em-negociacao{background:#fef3c7;color:#92400e}
+.ctrl-status-badge.aguardando-assinatura{background:#dbeafe;color:#1e40af}
+.ctrl-status-badge.aguardando-documentos{background:#e0e7ff;color:#3730a3}
+.ctrl-status-badge.juridico{background:#ede9fe;color:#5b21b6}
+.ctrl-status-badge.reprovado{background:#fee2e2;color:#991b1b}
+.ctrl-corban-summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.ctrl-summary-pill{background:var(--gp);border:1px solid var(--bd);border-radius:20px;padding:6px 14px;font-size:12px;color:var(--gd);font-weight:600}
+.ctrl-summary-pill span{font-weight:800;margin-right:4px}
 .ctrl-sub-row td{padding:0;border-bottom:1px solid var(--bd);background:var(--bg)}
 .ctrl-sub-wrap{padding:12px 14px 16px 46px}
 .ctrl-sub-empty{font-size:12px;color:var(--tm);padding:6px 0}
@@ -687,6 +694,7 @@ table.ctrl-sub-table tr:last-child td{border-bottom:none}
       </select>
       <input type="text" id="ctrl-corban-search" placeholder="Buscar corban..." oninput="renderControleCorbans()">
     </div>
+    <div class="ctrl-corban-summary" id="ctrl-corban-summary"></div>
     <div class="table-section" style="margin-bottom:28px">
       <div style="overflow-x:auto">
         <table class="ctrl-table">
@@ -787,34 +795,6 @@ table.ctrl-sub-table tr:last-child td{border-bottom:none}
 
 
     <div style="border-top:2px solid var(--bd);margin:32px 0 24px"></div>
-
-    <!-- ONBOARDING -->
-    <div class="section-title">Onboarding de Corbans</div>
-    <div class="onb-section">
-      <div class="onb-header">
-        <h3>Funil de Credenciamento dos Corbans</h3>
-        <button class="onb-add-btn" onclick="abrirOnbModal()">➕ Registrar / Atualizar</button>
-      </div>
-      <div style="overflow-x:auto">
-        <table class="onb-table">
-          <thead><tr>
-            <th>Corban</th><th>Progresso</th>
-            <th>Documentação</th><th>Compliance</th>
-            <th>Assinatura</th><th>Treinamento</th>
-            <th>Status</th><th>Responsável</th>
-          </tr></thead>
-          <tbody id="onb-tbody"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--tm)">Carregando...</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- COBERTURA -->
-    <div class="section-title">Cobertura de Praças</div>
-    <div class="grid-2" style="margin-bottom:16px">
-      <div class="kpi-card"><div class="label">Credenciados com Corban</div><div class="value" id="cob-com">—</div></div>
-      <div class="kpi-card" style="border-left-color:#f59e0b"><div class="label">Credenciados sem Corban</div><div class="value" id="cob-sem" style="color:#92400e">—</div></div>
-    </div>
-    <div class="cob-grid" id="cob-grid"></div>
 
     <!-- GIRO -->
     <div class="section-title">Giro de Carteira</div>
@@ -2501,6 +2481,30 @@ function salvarEvolucao(){
 
 // ── CONTROLE DE CORBANS ──────────────────────────────────────────
 const ctrlExpanded = new Set();
+const CTRL_STATUS_ORDER = ['Assinado','Em Negociação','Aguardando Assinatura','Aguardando Documentos','Jurídico','Reprovado'];
+
+function ctrlStatusIdx(s) {
+  const i = CTRL_STATUS_ORDER.indexOf(s);
+  return i === -1 ? CTRL_STATUS_ORDER.length : i;
+}
+
+function ctrlStatusSlug(s) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '') || 'outro';
+}
+
+function populateCtrlStatusFilter() {
+  const sel = document.getElementById('ctrl-corban-status');
+  if (!sel) return;
+  const cur = sel.value;
+  const distinct = [...new Set(corbansData.map(c => c.status).filter(Boolean))]
+    .sort((a, b) => ctrlStatusIdx(a) - ctrlStatusIdx(b) || a.localeCompare(b));
+  sel.innerHTML = '<option value="">Todos os status</option>' +
+    distinct.map(s => `<option value="${s}"${s === cur ? ' selected' : ''}>${s}</option>`).join('');
+}
 
 function normCorbanName(s) {
   return (s || '')
@@ -2524,16 +2528,38 @@ function corbanProdRows(nome) {
   });
 }
 
+function corbanStats(nome) {
+  const rows = corbanProdRows(nome);
+  const totalVl = rows.reduce((s, r) => s + r.vl, 0);
+  const municipios = new Set(rows.map(r => r.cv));
+  return { rows, totalVl, totalN: rows.length, municipios };
+}
+
 function renderControleCorbans() {
   const tbody = document.getElementById('ctrl-corban-tbody');
   if (!tbody) return;
+  populateCtrlStatusFilter();
   const statusF = document.getElementById('ctrl-corban-status')?.value || '';
   const searchF = (document.getElementById('ctrl-corban-search')?.value || '').toLowerCase().trim();
 
-  let list = corbansData.slice();
+  let list = corbansData.map(c => ({ ...c, stats: corbanStats(c.nome) }));
   if (statusF) list = list.filter(c => c.status === statusF);
   if (searchF) list = list.filter(c => c.nome.toLowerCase().includes(searchF));
-  list.sort((a, b) => a.nome.localeCompare(b.nome));
+  list.sort((a, b) =>
+    ctrlStatusIdx(a.status) - ctrlStatusIdx(b.status) ||
+    b.stats.totalVl - a.stats.totalVl ||
+    a.nome.localeCompare(b.nome)
+  );
+
+  const summaryEl = document.getElementById('ctrl-corban-summary');
+  if (summaryEl) {
+    const totN = list.reduce((s, c) => s + c.stats.totalN, 0);
+    const totVl = list.reduce((s, c) => s + c.stats.totalVl, 0);
+    summaryEl.innerHTML = `
+      <div class="ctrl-summary-pill"><span>${list.length}</span> corbans</div>
+      <div class="ctrl-summary-pill"><span>${prodData.length ? totN : '—'}</span> contratos</div>
+      <div class="ctrl-summary-pill"><span>${prodData.length ? 'R$ ' + fmtBR(totVl) : '—'}</span> produção total</div>`;
+  }
 
   if (!list.length) {
     tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--tm)">Nenhum corban encontrado.</td></tr>';
@@ -2542,17 +2568,16 @@ function renderControleCorbans() {
 
   tbody.innerHTML = list.map((c, i) => {
     const id = 'ctrl-' + i;
-    const rows = corbanProdRows(c.nome);
-    const total = rows.reduce((s, r) => s + r.vl, 0);
-    const totalTxt = prodData.length ? 'R$ ' + fmtBR(total) : '—';
-    const statusCls = c.status === 'Assinado' ? 'assinado' : 'negociacao';
+    const totalTxt = prodData.length ? 'R$ ' + fmtBR(c.stats.totalVl) : '—';
+    const pracasTxt = prodData.length ? c.stats.municipios.size : '—';
+    const statusCls = ctrlStatusSlug(c.status);
     const open = ctrlExpanded.has(c.nome);
     return `
       <tr>
         <td><button class="ctrl-expand-btn${open ? ' open' : ''}" id="btn-${id}" onclick="toggleControleCorban('${c.nome.replace(/'/g, "\\'")}', '${id}')">+</button></td>
         <td style="font-weight:700">${c.nome}</td>
         <td><span class="ctrl-status-badge ${statusCls}">${c.status}</span></td>
-        <td style="text-align:right">${c.pracas.length}</td>
+        <td style="text-align:right">${pracasTxt}</td>
         <td style="text-align:right;font-weight:700">${totalTxt}</td>
       </tr>
       <tr class="ctrl-sub-row" id="sub-${id}" style="display:${open ? 'table-row' : 'none'}">
@@ -2603,12 +2628,7 @@ function toggleControleCorban(nome, id) {
 
 function buildCorbans(){
   renderControleCorbans();
-  // Skip corbans cards (removed from UI)
-  if(document.getElementById('onb-tbody')) loadOnboarding();
-  if(document.getElementById('cob-grid')) buildCobertura();
   if(document.getElementById('giro-tbody')){ populateGiroSelects(); loadGiroTable(); }
-  const asin=corbansData.filter(c=>c.status==='Assinado');const neg=corbansData.filter(c=>c.status==='Em Negociação');
-  // Cards removed from UI - skip rendering
 }
 function buildChartCorbans(){
   if(!document.getElementById('chartCorbans')) return;
