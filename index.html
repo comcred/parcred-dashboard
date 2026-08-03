@@ -2399,23 +2399,21 @@ function populateCtrlStatusFilter() {
 }
 
 function normCorbanName(s) {
-  return (s || '')
+  const result = (s || '')
     .toUpperCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/\bLTDA\b.*$/, '')
-    .replace(/\bASSESSORIA\b.*$/, '')
-    .replace(/\bGESTAO\b.*$/, '')
-    .replace(/\bCOBRANCA\b.*$/, '')
-    .replace(/\bCONSULTORIA\b.*$/, '')
-    .replace(/[^A-Z0-9]/g, '')
+    .replace(/\s*(LTDA|ASSESSORIA|GESTAO|COBRANCA|CONSULTORIA|ME|EIRELI|S\.A\.).*$/i, '')
+    .replace(/[^A-Z0-9 ]/g, '')
     .trim();
+  return result;
 }
 
 function corbanProdRows(nome) {
   const n = normCorbanName(nome);
-  if (!n) return [];
+  if (!n || n.length < 3) return [];
   return prodData.filter(r => {
     const rn = normCorbanName(r.cb);
+    if (!rn || rn.length < 3) return false;
     return rn === n || rn.includes(n) || n.includes(rn);
   });
 }
