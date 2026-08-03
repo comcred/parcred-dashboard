@@ -2399,13 +2399,13 @@ function populateCtrlStatusFilter() {
 }
 
 function normCorbanName(s) {
-  const result = (s || '')
+  return (s || '')
     .toUpperCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s*(LTDA|ASSESSORIA|GESTAO|COBRANCA|CONSULTORIA|ME|EIRELI|S\.A\.).*$/i, '')
+    .replace(/\(.*?\)/g, '')
     .replace(/[^A-Z0-9 ]/g, '')
+    .replace(/\s+/g, ' ')
     .trim();
-  return result;
 }
 
 function corbanProdRows(nome) {
@@ -2414,7 +2414,17 @@ function corbanProdRows(nome) {
   return prodData.filter(r => {
     const rn = normCorbanName(r.cb);
     if (!rn || rn.length < 3) return false;
-    return rn === n || rn.includes(n) || n.includes(rn);
+    // Exact match first
+    if (rn === n) return true;
+    // Only do partial match if one is clearly contained in the other
+    // AND the shorter one is at least 6 chars (avoid false positives)
+    const shorter = n.length < rn.length ? n : rn;
+    const longer  = n.length < rn.length ? rn : n;
+    if (shorter.length >= 6 && longer.startsWith(shorter)) return true;
+    // Word-level match: all words of shorter must be in longer
+    const wordsShort = shorter.split(' ').filter(w => w.length >= 3);
+    if (wordsShort.length > 0 && wordsShort.every(w => longer.includes(w))) return true;
+    return false;
   });
 }
 
