@@ -2538,6 +2538,24 @@ function renderControleCorbans() {
         <td colspan="6"><div class="ctrl-sub-wrap">${renderCorbanSubTable(c.nome)}</div></td>
       </tr>`;
   }).join('');
+
+  // Totalizador no rodapé
+  const tfoot = tbody.closest('table')?.querySelector('tfoot') || (() => {
+    const tf = document.createElement('tfoot');
+    tbody.closest('table').appendChild(tf);
+    return tf;
+  })();
+  if (prodData.length) {
+    const totVl = list.reduce((s, c) => s + c.stats.totalVl, 0);
+    const totN  = list.reduce((s, c) => s + c.stats.totalN,  0);
+    tfoot.innerHTML = `<tr style="border-top:2px solid var(--gm);background:var(--gp)">
+      <td colspan="4" style="padding:10px 14px;font-size:12px;font-weight:700;color:var(--gd)">Total (${list.length} corbans · ${totN} contratos)</td>
+      <td style="padding:10px 14px;text-align:right"></td>
+      <td style="padding:10px 14px;text-align:right;font-size:14px;font-weight:700;color:var(--gd)">R$ ${fmtBR(totVl)}</td>
+    </tr>`;
+  } else {
+    tfoot.innerHTML = '';
+  }
 }
 
 function renderCorbanSubTable(nome) {
