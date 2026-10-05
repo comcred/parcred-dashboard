@@ -676,6 +676,11 @@ table.ctrl-sub-table tr:last-child td{border-bottom:none}
 
     <div class="section-title">Controle de Corbans</div>
     <div class="ctrl-corban-filters">
+      <select id="ctrl-corban-resp" onchange="renderControleCorbans()">
+        <option value="">Todos os responsáveis</option>
+        <option value="Gustavo">Gustavo</option>
+        <option value="Diego">Diego</option>
+      </select>
       <select id="ctrl-corban-status" onchange="renderControleCorbans()">
         <option value="">Todos os status</option>
         <option value="Assinado">Assinado</option>
@@ -688,7 +693,7 @@ table.ctrl-sub-table tr:last-child td{border-bottom:none}
       <div style="overflow-x:auto">
         <table class="ctrl-table">
           <thead><tr>
-            <th style="width:34px"></th><th>Corban</th><th>Status</th>
+            <th style="width:34px"></th><th>Corban</th><th>Status</th><th>Responsável</th>
             <th style="text-align:right">Praças Credenciadas</th>
             <th style="text-align:right">Produção Total</th>
           </tr></thead>
@@ -2435,6 +2440,52 @@ function corbanStats(nome) {
   return { rows, totalVl, totalN: rows.length, municipios };
 }
 
+const CARTEIRA_RESP = {
+  'FacilitaCred': 'Gustavo',
+  'CredTotal': 'Gustavo',
+  'Valore': 'Gustavo',
+  'Mana Capital': 'Gustavo',
+  'Norden': 'Gustavo',
+  'Global Multiserviço': 'Gustavo',
+  'GeneralCred': 'Gustavo',
+  'Ilanna Taila': 'Gustavo',
+  'Invest': 'Gustavo',
+  'SOS Soluções em Crédito': 'Gustavo',
+  'VIP Card': 'Gustavo',
+  'Assessoria de Credito e Imobiliario': 'Gustavo',
+  'F2F Capital': 'Gustavo',
+  'Michelle de Souza': 'Gustavo',
+  'CredCaceres': 'Gustavo',
+  'Pagangrizo': 'Gustavo',
+  'Fortuna Negocios': 'Gustavo',
+  'Alexandre Lopes': 'Gustavo',
+  'Apoio Assessoria Helenice': 'Gustavo',
+  'Guilherme Beller': 'Gustavo',
+  'Vanderson Severo Matos': 'Gustavo',
+  'Amazon Crédito': 'Gustavo',
+  'Gestao, Marketing': 'Diego',
+  'RB Emprestimos': 'Diego',
+  '7 Promotora': 'Diego',
+  'BetimCred': 'Diego',
+  'De Mattos': 'Diego',
+  'Eduardo Stuy': 'Diego',
+  'Inguz': 'Diego',
+  'JZR': 'Diego',
+  'Neisan': 'Diego',
+  'ParanaConsig': 'Diego',
+  'Smart Consig': 'Diego',
+  'Grande Lance': 'Diego',
+  'Charles Junior': 'Diego',
+};
+
+function getResp(nome) {
+  const n = nome || '';
+  for (const [key, resp] of Object.entries(CARTEIRA_RESP)) {
+    if (n.toLowerCase().includes(key.toLowerCase())) return resp;
+  }
+  return '';
+}
+
 function renderControleCorbans() {
   const tbody = document.getElementById('ctrl-corban-tbody');
   if (!tbody) return;
@@ -2442,7 +2493,9 @@ function renderControleCorbans() {
   const statusF = document.getElementById('ctrl-corban-status')?.value || '';
   const searchF = (document.getElementById('ctrl-corban-search')?.value || '').toLowerCase().trim();
 
-  let list = corbansData.map(c => ({ ...c, stats: corbanStats(c.nome) }));
+  const respF = document.getElementById('ctrl-corban-resp')?.value || '';
+  let list = corbansData.map(c => ({ ...c, stats: corbanStats(c.nome), resp: getResp(c.nome) }));
+  if (respF) list = list.filter(c => c.resp === respF);
   if (statusF) list = list.filter(c => c.status === statusF);
   if (searchF) list = list.filter(c => c.nome.toLowerCase().includes(searchF));
   list.sort((a, b) =>
@@ -2462,7 +2515,7 @@ function renderControleCorbans() {
   }
 
   if (!list.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--tm)">Nenhum corban encontrado.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--tm)">Nenhum corban encontrado.</td></tr>';
     return;
   }
 
@@ -2477,11 +2530,12 @@ function renderControleCorbans() {
         <td><button class="ctrl-expand-btn${open ? ' open' : ''}" id="btn-${id}" onclick="toggleControleCorban('${c.nome.replace(/'/g, "\\'")}', '${id}')">+</button></td>
         <td style="font-weight:700">${c.nome}</td>
         <td><span class="ctrl-status-badge ${statusCls}">${c.status}</span></td>
+        <td><span style="font-size:11px;padding:2px 10px;border-radius:10px;font-weight:600;background:${c.resp==='Gustavo'?'#dbeafe':c.resp==='Diego'?'#dcfce7':'#f3f4f6'};color:${c.resp==='Gustavo'?'#1e40af':c.resp==='Diego'?'#166534':'#9ca3af'}">${c.resp||'—'}</span></td>
         <td style="text-align:right">${pracasTxt}</td>
         <td style="text-align:right;font-weight:700">${totalTxt}</td>
       </tr>
       <tr class="ctrl-sub-row" id="sub-${id}" style="display:${open ? 'table-row' : 'none'}">
-        <td colspan="5"><div class="ctrl-sub-wrap">${renderCorbanSubTable(c.nome)}</div></td>
+        <td colspan="6"><div class="ctrl-sub-wrap">${renderCorbanSubTable(c.nome)}</div></td>
       </tr>`;
   }).join('');
 }
